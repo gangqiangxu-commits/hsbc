@@ -1,0 +1,31 @@
+# Java & Maven
+*.class
+*.jar
+*.war
+*.ear
+
+# Logs
+logs/
+*.log
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Maven
+/target/
+
+# IntelliJ IDEA
+*.iml
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Test reports
+surefire-reports/
+
+# Others
+bin/
