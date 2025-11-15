@@ -1,4 +1,4 @@
-package com.hsbc.iwpb.entity.service;
+package com.hsbc.iwpb.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

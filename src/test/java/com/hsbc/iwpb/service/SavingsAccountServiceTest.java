@@ -1,4 +1,4 @@
-package com.hsbc.iwpb.entity.service;
+package com.hsbc.iwpb.service;
 
 import com.hsbc.iwpb.component.RedisService;
 import com.hsbc.iwpb.entity.SavingsAccount;

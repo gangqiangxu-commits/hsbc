@@ -6,7 +6,7 @@ import com.hsbc.iwpb.dto.DepositWithdrawRequest;
 import com.hsbc.iwpb.dto.OpenAccountRequest;
 import com.hsbc.iwpb.entity.MoneyTransfer;
 import com.hsbc.iwpb.entity.SavingsAccount;
-import com.hsbc.iwpb.entity.service.SavingsAccountService;
+import com.hsbc.iwpb.service.SavingsAccountService;
 import com.hsbc.iwpb.entity.DepositOrWithdrawHistory;
 import java.util.Arrays;
 import java.util.List;

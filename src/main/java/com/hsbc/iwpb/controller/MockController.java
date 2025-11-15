@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.hsbc.iwpb.entity.SavingsAccount;
-import com.hsbc.iwpb.entity.service.SavingsAccountService;
+import com.hsbc.iwpb.service.SavingsAccountService;
 
 @RestController
 public class MockController {
