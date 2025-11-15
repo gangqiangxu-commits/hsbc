@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS savings_account (
+  account_number BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  personal_id BIGINT NOT NULL,
+  balance BIGINT NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  last_updated TIMESTAMP NOT NULL
+);

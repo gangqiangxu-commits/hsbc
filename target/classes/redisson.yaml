@@ -1,0 +1,8 @@
+singleServerConfig:
+  address: "redis://127.0.0.1:6379"
+  # password: "yourpassword" # uncomment and set if Redis requires auth
+  connectionPoolSize: 64
+  connectionMinimumIdleSize: 24
+threads: 16
+nettyThreads: 32
+outputRedirection: false
