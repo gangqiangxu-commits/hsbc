@@ -27,10 +27,10 @@ CREATE TABLE IF NOT EXISTS money_transfer_history (
     source_account_number    BIGINT NOT NULL,
     destination_account_number BIGINT NOT NULL,
     amount                  BIGINT NOT NULL,
-    timestamp               BIGINT NOT NULL,
+    created_at              TIMESTAMP NOT NULL,
     CONSTRAINT fk_source_account FOREIGN KEY (source_account_number) REFERENCES savings_account(account_number),
     CONSTRAINT fk_destination_account FOREIGN KEY (destination_account_number) REFERENCES savings_account(account_number)
 );
 CREATE INDEX IF NOT EXISTS idx_mth_source_account ON money_transfer_history(source_account_number);
 CREATE INDEX IF NOT EXISTS idx_mth_destination_account ON money_transfer_history(destination_account_number);
-CREATE INDEX IF NOT EXISTS idx_mth_timestamp ON money_transfer_history(timestamp);
+CREATE INDEX IF NOT EXISTS idx_mth_created_at ON money_transfer_history(created_at);

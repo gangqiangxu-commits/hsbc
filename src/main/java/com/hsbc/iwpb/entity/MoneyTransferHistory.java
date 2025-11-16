@@ -1,15 +1,17 @@
 package com.hsbc.iwpb.entity;
 
+import java.time.LocalDateTime;
+
 public class MoneyTransferHistory {
     private long transactionId;
     private long sourceAccountNumber;
     private long destinationAccountNumber;
     private long amount;
-    private long createdAt;
+    private LocalDateTime createdAt;
 
     public MoneyTransferHistory() {}
 
-    public MoneyTransferHistory(long transactionId, long sourceAccountNumber, long destinationAccountNumber, long amount, long createdAt) {
+    public MoneyTransferHistory(long transactionId, long sourceAccountNumber, long destinationAccountNumber, long amount, LocalDateTime createdAt) {
         this.transactionId = transactionId;
         this.sourceAccountNumber = sourceAccountNumber;
         this.destinationAccountNumber = destinationAccountNumber;
@@ -25,8 +27,8 @@ public class MoneyTransferHistory {
     public void setDestinationAccountNumber(long destinationAccountNumber) { this.destinationAccountNumber = destinationAccountNumber; }
     public long getAmount() { return amount; }
     public void setAmount(long amount) { this.amount = amount; }
-    public long getCreatedAt() { return createdAt; }
-    public void setCreatedAt(long createdAt) { this.createdAt = createdAt; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
     @Override
     public String toString() {

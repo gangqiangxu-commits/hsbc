@@ -107,8 +107,13 @@ public class SavingsAccountController {
     public ResponseEntity<List<SavingsAccount>> listAccounts() {
         return ResponseEntity.ok(savingsAccountService.listAccounts());
     }
+    
+    @GetMapping("/account")
+    public ResponseEntity<SavingsAccount> getAccount(@RequestParam("accountNumber") long accountNumber) {
+        return ResponseEntity.ok(savingsAccountService.getAccount(accountNumber));
+    }
 
-    @GetMapping("/account/history")
+    @GetMapping("/account/depositOrWithdraw:history")
     public ResponseEntity<List<DepositOrWithdrawHistory>> listDepositOrWithdrawHistory(@RequestParam("accountNumber") long accountNumber) {
         return ResponseEntity.ok(savingsAccountService.listDepositOrWithdrawHistory(accountNumber));
     }

@@ -42,8 +42,10 @@ public class SavingsAccountControllerTest {
         SavingsAccount sa = new SavingsAccount(1L, "Alice", 123L, 2000L, LocalDateTime.now(), LocalDateTime.now());
         when(savingsAccountService.processMoneyTransfer(req)).thenReturn(sa);
         ResponseEntity<MoneyTransferResponse> response = controller.processTransactionJson(req);
+        assertNotNull(response.getBody());
         assertTrue(response.getBody().success());
         assertEquals(sa, response.getBody().sourceAccount());
+        assertEquals("", response.getBody().errorMessage());
         assertEquals(200, response.getStatusCode().value());
     }
 
@@ -52,7 +54,9 @@ public class SavingsAccountControllerTest {
         MoneyTransferRequest req = new MoneyTransferRequest(1L, 2L, 1000L);
         when(savingsAccountService.processMoneyTransfer(req)).thenThrow(new RuntimeException("fail"));
         ResponseEntity<MoneyTransferResponse> response = controller.processTransactionJson(req);
+        assertNotNull(response.getBody());
         assertFalse(response.getBody().success());
+        assertNull(response.getBody().sourceAccount());
         assertEquals("fail", response.getBody().errorMessage());
     }
 
@@ -62,6 +66,7 @@ public class SavingsAccountControllerTest {
         SavingsAccount sa = new SavingsAccount(2L, "Bob", 456L, 5000L, LocalDateTime.now(), LocalDateTime.now());
         when(savingsAccountService.createAccount("Bob", 456L)).thenReturn(sa);
         ResponseEntity<SavingsAccount> response = controller.openAccount(req);
+        assertNotNull(response.getBody());
         assertEquals(sa, response.getBody());
         assertEquals(200, response.getStatusCode().value());
     }
@@ -76,6 +81,9 @@ public class SavingsAccountControllerTest {
         assertNotNull(response.getBody());
         assertFalse(response.getBody().isEmpty());
         assertEquals(10000, response.getBody().size());
+        for (SavingsAccount account : response.getBody()) {
+            assertNotNull(account);
+        }
     }
 
     @Test
@@ -84,8 +92,10 @@ public class SavingsAccountControllerTest {
         SavingsAccount sa = new SavingsAccount(1L, "Alice", 123L, 3000L, LocalDateTime.now(), LocalDateTime.now());
         when(savingsAccountService.depositOrWithdraw(1L, 1000L)).thenReturn(sa);
         ResponseEntity<DepositWithdrawResponse> response = controller.depositWithdraw(req);
+        assertNotNull(response.getBody());
         assertTrue(response.getBody().success());
         assertEquals(sa, response.getBody().account());
+        assertEquals("", response.getBody().errorMessage());
     }
 
     @Test
@@ -93,7 +103,9 @@ public class SavingsAccountControllerTest {
         DepositWithdrawRequest req = new DepositWithdrawRequest(1L, -1000L);
         when(savingsAccountService.depositOrWithdraw(1L, -1000L)).thenThrow(new RuntimeException("Insufficient funds"));
         ResponseEntity<DepositWithdrawResponse> response = controller.depositWithdraw(req);
+        assertNotNull(response.getBody());
         assertFalse(response.getBody().success());
+        assertNull(response.getBody().account());
         assertEquals("Insufficient funds", response.getBody().errorMessage());
     }
 
@@ -102,6 +114,7 @@ public class SavingsAccountControllerTest {
         SavingsAccount sa = new SavingsAccount(1L, "Alice", 123L, 2000L, LocalDateTime.now(), LocalDateTime.now());
         when(savingsAccountService.listAccounts()).thenReturn(Collections.singletonList(sa));
         ResponseEntity<List<SavingsAccount>> response = controller.listAccounts();
+        assertNotNull(response.getBody());
         assertEquals(1, response.getBody().size());
         assertEquals(sa, response.getBody().get(0));
     }
@@ -111,41 +124,46 @@ public class SavingsAccountControllerTest {
         DepositOrWithdrawHistory h = new DepositOrWithdrawHistory(1L, 1000L, LocalDateTime.now(), 10L);
         when(savingsAccountService.listDepositOrWithdrawHistory(1L)).thenReturn(Collections.singletonList(h));
         ResponseEntity<List<DepositOrWithdrawHistory>> response = controller.listDepositOrWithdrawHistory(1L);
+        assertNotNull(response.getBody());
         assertEquals(1, response.getBody().size());
         assertEquals(h, response.getBody().get(0));
     }
 
     @Test
     void testFindByTransactionId() {
-        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, System.currentTimeMillis());
+        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, LocalDateTime.now());
         when(savingsAccountService.findByTransactionId(10L)).thenReturn(h);
         ResponseEntity<MoneyTransferHistory> response = controller.findByTransactionId(10L);
+        assertNotNull(response.getBody());
         assertEquals(h, response.getBody());
     }
 
     @Test
     void testFindBySourceAccountNumber() {
-        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, System.currentTimeMillis());
+        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, LocalDateTime.now());
         when(savingsAccountService.findBySourceAccountNumber(1L)).thenReturn(Collections.singletonList(h));
         ResponseEntity<List<MoneyTransferHistory>> response = controller.findBySourceAccountNumber(1L);
+        assertNotNull(response.getBody());
         assertEquals(1, response.getBody().size());
         assertEquals(h, response.getBody().get(0));
     }
 
     @Test
     void testFindByDestinationAccountNumber() {
-        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, System.currentTimeMillis());
+        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, LocalDateTime.now());
         when(savingsAccountService.findByDestinationAccountNumber(2L)).thenReturn(Collections.singletonList(h));
         ResponseEntity<List<MoneyTransferHistory>> response = controller.findByDestinationAccountNumber(2L);
+        assertNotNull(response.getBody());
         assertEquals(1, response.getBody().size());
         assertEquals(h, response.getBody().get(0));
     }
 
     @Test
     void testSearchBySourceAndDestination() {
-        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, System.currentTimeMillis());
+        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, LocalDateTime.now());
         when(savingsAccountService.findBySourceAndDestinationAccountNumber(1L, 2L)).thenReturn(Collections.singletonList(h));
         ResponseEntity<List<MoneyTransferHistory>> response = controller.searchBySourceAndDestination(1L, 2L);
+        assertNotNull(response.getBody());
         assertEquals(1, response.getBody().size());
         assertEquals(h, response.getBody().get(0));
     }

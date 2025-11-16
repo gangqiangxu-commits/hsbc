@@ -6,8 +6,8 @@ import org.mybatis.spring.annotation.MapperScan;
 
 @SpringBootApplication
 @MapperScan("com.hsbc.iwpb.mapper")
-public class AccountBalanceApplication {
+public class SavingsAccountApplication {
     public static void main(String[] args) {
-        SpringApplication.run(AccountBalanceApplication.class, args);
+        SpringApplication.run(SavingsAccountApplication.class, args);
     }
 }

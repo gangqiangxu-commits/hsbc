@@ -168,7 +168,7 @@ public class SavingsAccountService {
         try  {
         	// save money transfer history
             long tid = redisService.nextTransactionId();
-            MoneyTransferHistory transfer = new MoneyTransferHistory(tid, san, dan, req.amount(), System.currentTimeMillis());
+            MoneyTransferHistory transfer = new MoneyTransferHistory(tid, san, dan, req.amount(), LocalDateTime.now());
             this.moneyTransferHistoryMapper.insert(transfer);
             log.info("Recorded money transfer: {}", transfer);
             
