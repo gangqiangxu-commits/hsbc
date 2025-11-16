@@ -1,15 +1,8 @@
 package com.hsbc.iwpb.controller;
 
-import com.hsbc.iwpb.component.RedisService;
-import com.hsbc.iwpb.dto.AccountBalanceTransanctionRequest;
-import com.hsbc.iwpb.dto.DepositWithdrawRequest;
-import com.hsbc.iwpb.dto.OpenAccountRequest;
-import com.hsbc.iwpb.entity.MoneyTransfer;
-import com.hsbc.iwpb.entity.SavingsAccount;
+import com.hsbc.iwpb.dto.*;
+import com.hsbc.iwpb.entity.*;
 import com.hsbc.iwpb.service.SavingsAccountService;
-import com.hsbc.iwpb.entity.DepositOrWithdrawHistory;
-import java.util.Arrays;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -17,16 +10,19 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.ResponseEntity;
 
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 public class SavingsAccountControllerTest {
     @Mock
     private SavingsAccountService savingsAccountService;
-    @Mock
-    private RedisService redisService;
+
     @InjectMocks
-    private AccountController accountController;
+    private SavingsAccountController controller;
 
     @BeforeEach
     void setUp() {
@@ -34,59 +30,123 @@ public class SavingsAccountControllerTest {
     }
 
     @Test
-    void hello_returnsHelloWorld() {
-        ResponseEntity<String> response = accountController.hello();
+    void testHello() {
+        ResponseEntity<String> response = controller.hello();
         assertEquals("Hello, World!", response.getBody());
+        assertTrue(response.getStatusCode().is2xxSuccessful());
     }
 
     @Test
-    void openAccount_returnsSavingsAccount() {
-        OpenAccountRequest req = new OpenAccountRequest("John", 12345L);
-        SavingsAccount sa = mock(SavingsAccount.class);
-        when(savingsAccountService.createAccount("John", 12345L)).thenReturn(sa);
-        ResponseEntity<SavingsAccount> response = accountController.openAccount(req);
+    void testProcessTransactionJson_success() {
+        MoneyTransferRequest req = new MoneyTransferRequest(1L, 2L, 1000L);
+        SavingsAccount sa = new SavingsAccount(1L, "Alice", 123L, 2000L, LocalDateTime.now(), LocalDateTime.now());
+        when(savingsAccountService.processMoneyTransfer(req)).thenReturn(sa);
+        ResponseEntity<MoneyTransferResponse> response = controller.processTransactionJson(req);
+        assertTrue(response.getBody().success());
+        assertEquals(sa, response.getBody().sourceAccount());
+        assertEquals(200, response.getStatusCode().value());
+    }
+
+    @Test
+    void testProcessTransactionJson_failure() {
+        MoneyTransferRequest req = new MoneyTransferRequest(1L, 2L, 1000L);
+        when(savingsAccountService.processMoneyTransfer(req)).thenThrow(new RuntimeException("fail"));
+        ResponseEntity<MoneyTransferResponse> response = controller.processTransactionJson(req);
+        assertFalse(response.getBody().success());
+        assertEquals("fail", response.getBody().errorMessage());
+    }
+
+    @Test
+    void testOpenAccount() {
+        OpenAccountRequest req = new OpenAccountRequest("Bob", 456L);
+        SavingsAccount sa = new SavingsAccount(2L, "Bob", 456L, 5000L, LocalDateTime.now(), LocalDateTime.now());
+        when(savingsAccountService.createAccount("Bob", 456L)).thenReturn(sa);
+        ResponseEntity<SavingsAccount> response = controller.openAccount(req);
         assertEquals(sa, response.getBody());
+        assertEquals(200, response.getStatusCode().value());
     }
 
     @Test
-    void depositWithdraw_returnsSavingsAccount() {
-        DepositWithdrawRequest req = new DepositWithdrawRequest(1001L, 5000L); // 5000 cents = $50
-        SavingsAccount sa = mock(SavingsAccount.class);
-        when(savingsAccountService.depositOrWithdraw(1001L, 5000L)).thenReturn(sa);
-        ResponseEntity<SavingsAccount> response = accountController.depositWithdraw(req);
-        assertEquals(sa, response.getBody());
+    void testBatchOpenAccounts_defaultValues() {
+        SavingsAccount sa = new SavingsAccount(3L, "Mocked User1000", 200000L, 10000L, LocalDateTime.now(), LocalDateTime.now());
+        when(savingsAccountService.createAccount(anyString(), anyLong())).thenReturn(sa);
+        when(savingsAccountService.depositOrWithdraw(anyLong(), anyLong())).thenReturn(sa);
+        when(savingsAccountService.getAccount(anyLong())).thenReturn(sa);
+        ResponseEntity<List<SavingsAccount>> response = controller.batchOpenAccounts(-1, -1);
+        assertNotNull(response.getBody());
+        assertFalse(response.getBody().isEmpty());
+        assertEquals(10000, response.getBody().size());
     }
 
     @Test
-    void listAccounts_returnsAllAccounts() {
-        SavingsAccount sa1 = mock(SavingsAccount.class);
-        SavingsAccount sa2 = mock(SavingsAccount.class);
-        List<SavingsAccount> accounts = Arrays.asList(sa1, sa2);
-        when(savingsAccountService.listAccounts()).thenReturn(accounts);
-        ResponseEntity<List<SavingsAccount>> response = accountController.listAccounts();
-        assertEquals(accounts, response.getBody());
+    void testDepositWithdraw_success() {
+        DepositWithdrawRequest req = new DepositWithdrawRequest(1L, 1000L);
+        SavingsAccount sa = new SavingsAccount(1L, "Alice", 123L, 3000L, LocalDateTime.now(), LocalDateTime.now());
+        when(savingsAccountService.depositOrWithdraw(1L, 1000L)).thenReturn(sa);
+        ResponseEntity<DepositWithdrawResponse> response = controller.depositWithdraw(req);
+        assertTrue(response.getBody().success());
+        assertEquals(sa, response.getBody().account());
     }
 
     @Test
-    void listDepositOrWithdrawHistory_returnsHistory() {
-        DepositOrWithdrawHistory h1 = mock(DepositOrWithdrawHistory.class);
-        DepositOrWithdrawHistory h2 = mock(DepositOrWithdrawHistory.class);
-        List<DepositOrWithdrawHistory> history = Arrays.asList(h1, h2);
-        when(savingsAccountService.listDepositOrWithdrawHistory(1001L)).thenReturn(history);
-        ResponseEntity<List<DepositOrWithdrawHistory>> response = accountController.listDepositOrWithdrawHistory(1001L);
-        assertEquals(history, response.getBody());
+    void testDepositWithdraw_failure() {
+        DepositWithdrawRequest req = new DepositWithdrawRequest(1L, -1000L);
+        when(savingsAccountService.depositOrWithdraw(1L, -1000L)).thenThrow(new RuntimeException("Insufficient funds"));
+        ResponseEntity<DepositWithdrawResponse> response = controller.depositWithdraw(req);
+        assertFalse(response.getBody().success());
+        assertEquals("Insufficient funds", response.getBody().errorMessage());
     }
 
     @Test
-    void processTransactionJson_returnsTransaction() {
-        AccountBalanceTransanctionRequest req = new AccountBalanceTransanctionRequest(1001L, 2002L, 1500L);
-        when(redisService.nextTransactionId()).thenReturn(1L);
-        ResponseEntity<MoneyTransfer> response = accountController.processTransactionJson(req);
-        MoneyTransfer tx = response.getBody();
-        assertNotNull(tx);
-        assertEquals(1L, tx.transactionId());
-        assertEquals(1001L, tx.sourceAccountNumber());
-        assertEquals(2002L, tx.destinationAccountNumber());
-        assertEquals(1500L, tx.amount());
+    void testListAccounts() {
+        SavingsAccount sa = new SavingsAccount(1L, "Alice", 123L, 2000L, LocalDateTime.now(), LocalDateTime.now());
+        when(savingsAccountService.listAccounts()).thenReturn(Collections.singletonList(sa));
+        ResponseEntity<List<SavingsAccount>> response = controller.listAccounts();
+        assertEquals(1, response.getBody().size());
+        assertEquals(sa, response.getBody().get(0));
+    }
+
+    @Test
+    void testListDepositOrWithdrawHistory() {
+        DepositOrWithdrawHistory h = new DepositOrWithdrawHistory(1L, 1000L, LocalDateTime.now(), 10L);
+        when(savingsAccountService.listDepositOrWithdrawHistory(1L)).thenReturn(Collections.singletonList(h));
+        ResponseEntity<List<DepositOrWithdrawHistory>> response = controller.listDepositOrWithdrawHistory(1L);
+        assertEquals(1, response.getBody().size());
+        assertEquals(h, response.getBody().get(0));
+    }
+
+    @Test
+    void testFindByTransactionId() {
+        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, System.currentTimeMillis());
+        when(savingsAccountService.findByTransactionId(10L)).thenReturn(h);
+        ResponseEntity<MoneyTransferHistory> response = controller.findByTransactionId(10L);
+        assertEquals(h, response.getBody());
+    }
+
+    @Test
+    void testFindBySourceAccountNumber() {
+        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, System.currentTimeMillis());
+        when(savingsAccountService.findBySourceAccountNumber(1L)).thenReturn(Collections.singletonList(h));
+        ResponseEntity<List<MoneyTransferHistory>> response = controller.findBySourceAccountNumber(1L);
+        assertEquals(1, response.getBody().size());
+        assertEquals(h, response.getBody().get(0));
+    }
+
+    @Test
+    void testFindByDestinationAccountNumber() {
+        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, System.currentTimeMillis());
+        when(savingsAccountService.findByDestinationAccountNumber(2L)).thenReturn(Collections.singletonList(h));
+        ResponseEntity<List<MoneyTransferHistory>> response = controller.findByDestinationAccountNumber(2L);
+        assertEquals(1, response.getBody().size());
+        assertEquals(h, response.getBody().get(0));
+    }
+
+    @Test
+    void testSearchBySourceAndDestination() {
+        MoneyTransferHistory h = new MoneyTransferHistory(10L, 1L, 2L, 1000L, System.currentTimeMillis());
+        when(savingsAccountService.findBySourceAndDestinationAccountNumber(1L, 2L)).thenReturn(Collections.singletonList(h));
+        ResponseEntity<List<MoneyTransferHistory>> response = controller.searchBySourceAndDestination(1L, 2L);
+        assertEquals(1, response.getBody().size());
+        assertEquals(h, response.getBody().get(0));
     }
 }

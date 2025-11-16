@@ -1,6 +1,6 @@
 package com.hsbc.iwpb.dto;
 
-public record AccountBalanceTransanctionRequest(long sourceAccountNumber,
+public record MoneyTransferRequest(long sourceAccountNumber,
 	long destinationAccountNumber,
 	// unit: cents
 	long amount) {

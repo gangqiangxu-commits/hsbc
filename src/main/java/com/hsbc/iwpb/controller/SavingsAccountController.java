@@ -6,11 +6,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.hsbc.iwpb.component.RedisService;
-import com.hsbc.iwpb.dto.AccountBalanceTransanctionRequest;
+import com.hsbc.iwpb.dto.MoneyTransferRequest;
+import com.hsbc.iwpb.dto.MoneyTransferResponse;
 import com.hsbc.iwpb.dto.DepositWithdrawRequest;
+import com.hsbc.iwpb.dto.DepositWithdrawResponse;
 import com.hsbc.iwpb.dto.OpenAccountRequest;
-import com.hsbc.iwpb.entity.MoneyTransfer;
 import com.hsbc.iwpb.entity.MoneyTransferHistory;
 import com.hsbc.iwpb.entity.SavingsAccount;
 import com.hsbc.iwpb.service.SavingsAccountService;
@@ -25,17 +25,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @RestController
-public class AccountController {
+public class SavingsAccountController {
 	
-	private static final Logger log = LoggerFactory.getLogger(AccountController.class);
+	private static final Logger log = LoggerFactory.getLogger(SavingsAccountController.class);
 
     private final SavingsAccountService savingsAccountService;
-    private final RedisService redisService;
 
     @Autowired
-    public AccountController(SavingsAccountService savingsAccountService, RedisService rs) {
+    public SavingsAccountController(SavingsAccountService savingsAccountService) {
         this.savingsAccountService = savingsAccountService;
-        this.redisService = rs;
     }
 
     @GetMapping("/hello")
@@ -45,8 +43,14 @@ public class AccountController {
     
     // JSON-based endpoint: explicitly consume application/json
     @PostMapping(path = "/transaction:process", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<MoneyTransfer> processTransactionJson(@RequestBody AccountBalanceTransanctionRequest req) {
-        return process(req);
+    public ResponseEntity<MoneyTransferResponse> processTransactionJson(@RequestBody MoneyTransferRequest req) {
+    	try {
+	    	var account = this.savingsAccountService.processMoneyTransfer(req);
+	        return ResponseEntity.ok(new MoneyTransferResponse(account, true, ""));
+    	} catch (Exception e) {
+    		log.error("Error processing transaction: {}, request: {}", e.getMessage(), req);
+    		return ResponseEntity.ofNullable(new MoneyTransferResponse(null, false, e.getMessage()));
+    	}
     }
     
     @PostMapping(path = "/account", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -55,10 +59,48 @@ public class AccountController {
         return ResponseEntity.ok(sa);
     }
     
+    @PostMapping(path = "/accounts:batchOpen")
+    public ResponseEntity<List<SavingsAccount>> batchOpenAccounts(@RequestParam int numAccounts, @RequestParam int balance) {
+		log.info("Received request to create {} accounts with balance={}", numAccounts, balance);
+		
+		if (balance <= 0) {
+			balance = 10000; // default balance
+			log.info("Using default balance={}", balance);
+		}
+		
+		if (numAccounts <= 0 || numAccounts > 1000) {
+			numAccounts = 10000; // default number of accounts
+			log.info("Using default numAccounts={}", numAccounts);
+		}
+		
+    	List<SavingsAccount> createdAccounts = openAccounts(numAccounts, balance);
+        return ResponseEntity.ok(createdAccounts);
+    }
+
+	private List<SavingsAccount> openAccounts(int numAccounts, int balance) {
+		List<SavingsAccount> createdAccounts = new java.util.ArrayList<>();
+        for (int i=0; i<numAccounts; i++) {
+			String name = "Mocked User" + (1000 + i);
+			long personalId = 200000 + i;
+			SavingsAccount sa = savingsAccountService.createAccount(name, personalId);
+			savingsAccountService.depositOrWithdraw(sa.getAccountNumber(), balance);
+			sa = savingsAccountService.getAccount(sa.getAccountNumber());
+			log.info("Created mock account: accountNumber={}, name={}, personalId={}, balance={}", sa.getAccountNumber(), name, personalId, sa.getBalance());
+			createdAccounts.add(sa);
+		}
+		return createdAccounts;
+	}
+    
     @PostMapping(path = "/account:depositOrWithdraw", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<SavingsAccount> depositWithdraw(@RequestBody DepositWithdrawRequest req) {
-        SavingsAccount sa = savingsAccountService.depositOrWithdraw(req.accountNumber(), req.amount());
-        return ResponseEntity.ok(sa);
+    public ResponseEntity<DepositWithdrawResponse> depositWithdraw(@RequestBody DepositWithdrawRequest req) {
+        try {
+        	SavingsAccount sa = savingsAccountService.depositOrWithdraw(req.accountNumber(), req.amount());
+        	return ResponseEntity.ok(new DepositWithdrawResponse(sa, true, ""));
+        } catch (Exception e) {
+			log.error("Error during deposit/withdraw for accountNumber={}, amount={}: {}", req.accountNumber(), req.amount(), e.getMessage());
+			return ResponseEntity.ofNullable(new DepositWithdrawResponse(null, false, e.getMessage()));
+		}
+        
     }
 
     @GetMapping("/accounts")
@@ -92,21 +134,5 @@ public class AccountController {
             @RequestParam(value = "destinationAccountNumber", required = true) long destinationAccountNumber) {
         List<MoneyTransferHistory> result = savingsAccountService.findBySourceAndDestinationAccountNumber(sourceAccountNumber, destinationAccountNumber);
         return ResponseEntity.ok(result);
-    }
-
-    // Common processing logic
-    private ResponseEntity<MoneyTransfer> process(AccountBalanceTransanctionRequest req) {
-    	long ts = System.currentTimeMillis();
-        long nextTransactionId = redisService.nextTransactionId();
-        log.info("request: {}", req);
-        MoneyTransfer transaction = new MoneyTransfer(
-				nextTransactionId,
-				req.sourceAccountNumber(),
-				req.destinationAccountNumber(),
-				req.amount(),
-				ts
-		);
-        // TODO: add logic
-        return ResponseEntity.ok(transaction);
     }
 }

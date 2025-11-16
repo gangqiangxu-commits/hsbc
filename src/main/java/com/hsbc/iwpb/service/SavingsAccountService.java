@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.hsbc.iwpb.component.RedisService;
+import com.hsbc.iwpb.dto.MoneyTransferRequest;
 import com.hsbc.iwpb.entity.SavingsAccount;
 import com.hsbc.iwpb.mapper.SavingsAccountMapper;
 import com.hsbc.iwpb.mapper.DepositOrWithdrawHistoryMapper;
@@ -17,13 +18,12 @@ import io.github.resilience4j.retry.RetryConfig;
 import com.hsbc.iwpb.entity.DepositOrWithdrawHistory;
 import com.hsbc.iwpb.mapper.MoneyTransferHistoryMapper;
 import com.hsbc.iwpb.entity.MoneyTransferHistory;
-import com.hsbc.iwpb.entity.MoneyTransfer;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.concurrent.Callable;
 import java.util.concurrent.locks.Lock;
+import java.util.function.Supplier;
 
 @Service
 public class SavingsAccountService {
@@ -32,14 +32,14 @@ public class SavingsAccountService {
     private final SavingsAccountMapper savingsAccountMapper;
     private final RedisService redisService;
     private final DepositOrWithdrawHistoryMapper userDepositOrWithdrawHistoryMapper;
-    private final MoneyTransferHistoryMapper transactionHistoryMapper;
+    private final MoneyTransferHistoryMapper moneyTransferHistoryMapper;
 
     @Autowired
     public SavingsAccountService(SavingsAccountMapper savingsAccountMapper, RedisService redisService, DepositOrWithdrawHistoryMapper userDepositOrWithdrawHistoryMapper, MoneyTransferHistoryMapper ahm) {
         this.savingsAccountMapper = savingsAccountMapper;
         this.redisService = redisService;
         this.userDepositOrWithdrawHistoryMapper = userDepositOrWithdrawHistoryMapper;
-        this.transactionHistoryMapper = ahm;
+        this.moneyTransferHistoryMapper = ahm;
     }
 
     public SavingsAccount getAccount(long accountNumber) {
@@ -56,15 +56,25 @@ public class SavingsAccountService {
         if (newBalance < 0) {
             throw new IllegalArgumentException("Insufficient funds in account " + accountNumber + " for withdrawal of " + (-amount));
         }
-        final long transId = this.redisService.nextTransactionId();
+        
         account.setBalance(newBalance);
         account.setLastUpdated(LocalDateTime.now());
-        savingsAccountMapper.update(account);
-        log.info("Account {} new balance after deposit/withdraw: {}", accountNumber, newBalance);
-        DepositOrWithdrawHistory history = new DepositOrWithdrawHistory(accountNumber, amount, LocalDateTime.now(), transId);
-        log.info("Recording deposit/withdraw history: accountNumber={}, amount={}", accountNumber, amount);
-        userDepositOrWithdrawHistoryMapper.insert(history);
-        return savingsAccountMapper.findByAccountNumber(accountNumber);
+        // lock accounts
+        Lock lock = lockAccount(accountNumber);
+        
+        try {
+	        final long transId = this.redisService.nextTransactionId();
+	        savingsAccountMapper.update(account);
+	        log.info("Account {} new balance after deposit/withdraw: {}", accountNumber, newBalance);
+	        
+	        DepositOrWithdrawHistory history = new DepositOrWithdrawHistory(accountNumber, amount, LocalDateTime.now(), transId);
+	        log.info("Recording deposit/withdraw history: accountNumber={}, amount={}", accountNumber, amount);
+	        userDepositOrWithdrawHistoryMapper.insert(history);
+	        
+	        return savingsAccountMapper.findByAccountNumber(accountNumber);
+        } finally {
+			lock.unlock();
+		}
     }
 
     public SavingsAccount createAccount(String name, long personalId) {
@@ -79,21 +89,6 @@ public class SavingsAccountService {
         return account;
     }
 
-    public void updateBalance(long accountNumber, long newBalance) {
-        SavingsAccount existing = savingsAccountMapper.findByAccountNumber(accountNumber);
-        if (existing == null) {
-            throw new IllegalArgumentException("Account " + accountNumber + " does not exist");
-        }
-        if (newBalance < 0) {
-            throw new IllegalArgumentException("Balance cannot be negative");
-        }
-        LocalDateTime now = LocalDateTime.now();
-        existing.setBalance(newBalance);
-        existing.setLastUpdated(now);
-        savingsAccountMapper.update(existing);
-        log.info("Updated account {} balance to {}", accountNumber, newBalance);
-    }
-
     public List<SavingsAccount> listAccounts() {
         return savingsAccountMapper.listAll();
     }
@@ -103,58 +98,100 @@ public class SavingsAccountService {
     }
     
     public MoneyTransferHistory findByTransactionId(long transactionId) {
-        return this.transactionHistoryMapper.findByTransactionId(transactionId);
+        return this.moneyTransferHistoryMapper.findByTransactionId(transactionId);
     }
 
     public List<MoneyTransferHistory> findBySourceAccountNumber(long accountNumber) {
-        return transactionHistoryMapper.findBySourceAccountNumber(accountNumber);
+        return moneyTransferHistoryMapper.findBySourceAccountNumber(accountNumber);
     }
 
     public List<MoneyTransferHistory> findByDestinationAccountNumber(long accountNumber) {
-        return transactionHistoryMapper.findByDestinationAccountNumber(accountNumber);
+        return moneyTransferHistoryMapper.findByDestinationAccountNumber(accountNumber);
     }
     
     public List<MoneyTransferHistory> findBySourceAndDestinationAccountNumber(long sourceAccountNumber, long destinationAccountNumber) {
-        return transactionHistoryMapper.findBySourceAndDestinationAccountNumber(sourceAccountNumber, destinationAccountNumber);
+        return moneyTransferHistoryMapper.findBySourceAndDestinationAccountNumber(sourceAccountNumber, destinationAccountNumber);
     }
 
     public List<MoneyTransferHistory> listAllMoneyTransferHistories() {
-        return transactionHistoryMapper.listAll();
+        return moneyTransferHistoryMapper.listAll();
     }
     
-    private boolean checkIfSourceAccountHasEnoughBalance(long accountNumber, long amount) {
-        return false;
-    }
-
-    public void processTransaction(MoneyTransfer transaction) {
-        SavingsAccount account = this.savingsAccountMapper.findByAccountNumber(transaction.sourceAccountNumber());
-        RetryConfig retryConfig = RetryConfig.custom()
+    private Lock lockAccount(long accountNumber) {
+    	RetryConfig retryConfig = RetryConfig.custom()
                 .maxAttempts(3)
-                .waitDuration(Duration.ofMillis(500))
+                .waitDuration(Duration.ofMillis(100))
                 .build();
         final Retry retry = Retry.of("transactionServiceRetry", retryConfig);
-        Callable<Lock[]> callable = Retry.decorateCallable(retry, () -> {
-            Lock sourceAccountLock = redisService.getLock(transaction.sourceAccountNumber());
+        Supplier<Lock> lockSupplier = Retry.decorateSupplier(retry, () -> {
+            Lock sourceAccountLock = redisService.getLock(accountNumber);
             if (sourceAccountLock == null) {
-                throw new IllegalStateException("Could not acquire lock for source account: " + transaction.sourceAccountNumber());
+                throw new IllegalStateException("Could not acquire lock for source account: " + accountNumber);
             }
-            Lock destinationAccountLock = redisService.getLock(transaction.destinationAccountNumber());
+            return sourceAccountLock;
+        });
+        return lockSupplier.get();
+	}
+    
+    private Lock[] lockAccounts(long sourceAccountNumber, long destinationAccountNumber) {
+    	RetryConfig retryConfig = RetryConfig.custom()
+                .maxAttempts(3)
+                .waitDuration(Duration.ofMillis(100))
+                .build();
+        final Retry retry = Retry.of("transactionServiceRetry", retryConfig);
+        Supplier<Lock[]> lockSupplier = Retry.decorateSupplier(retry, () -> {
+            Lock sourceAccountLock = redisService.getLock(sourceAccountNumber);
+            if (sourceAccountLock == null) {
+                throw new IllegalStateException("Could not acquire lock for source account: " + sourceAccountNumber);
+            }
+            Lock destinationAccountLock = redisService.getLock(destinationAccountNumber);
             if (destinationAccountLock == null) {
                 sourceAccountLock.unlock();
-                throw new IllegalStateException("Could not acquire lock for destination account: " + transaction.destinationAccountNumber());
+                throw new IllegalStateException("Could not acquire lock for destination account: " + destinationAccountNumber);
             }
             return new Lock[] {sourceAccountLock, destinationAccountLock};
         });
-        try {
-            // TODO: add logic
-            Lock[] locks = callable.call();
+        return lockSupplier.get();
+	}
+
+    @Transactional
+    public SavingsAccount processMoneyTransfer(MoneyTransferRequest req) {
+        SavingsAccount account = this.savingsAccountMapper.findByAccountNumber(req.sourceAccountNumber());
+        if (account.getBalance() < req.amount()) {
+			throw new IllegalArgumentException("Insufficient funds in source account: " + req.sourceAccountNumber());
+		}
+        final long san = req.sourceAccountNumber();
+        final long dan = req.destinationAccountNumber();
+        
+        
+        Lock[] locks = lockAccounts(san, dan);
+        try  {
+        	// save money transfer history
+            long tid = redisService.nextTransactionId();
+            MoneyTransferHistory transfer = new MoneyTransferHistory(tid, san, dan, req.amount(), System.currentTimeMillis());
+            this.moneyTransferHistoryMapper.insert(transfer);
+            log.info("Recorded money transfer: {}", transfer);
+            
+            // reduce money in source account
+            SavingsAccount sourceAccount = this.savingsAccountMapper.findByAccountNumber(san);
+            sourceAccount.setBalance(sourceAccount.getBalance() - req.amount());	
+            this.savingsAccountMapper.update(sourceAccount);
+            log.info("Debited source account {} by amount {}. New balance: {}", san, req.amount(), sourceAccount.getBalance());
+            
+            // increment money in destination account
+            SavingsAccount destinationAccount = this.savingsAccountMapper.findByAccountNumber(dan);
+            destinationAccount.setBalance(destinationAccount.getBalance() + req.amount());
+            this.savingsAccountMapper.update(destinationAccount);
+            log.info("Credited destination account {} by amount {}. New balance: {}", dan, req.amount(), destinationAccount.getBalance());
+            
+            return sourceAccount;
         } catch (Exception e) {
-            e.printStackTrace();
-            if (e instanceof RuntimeException) {
-                throw (RuntimeException) e;
-            } else {
-                throw new RuntimeException(e);
-            }
-        }
+			log.error("Error processing transaction: {}", e.getMessage());
+			throw e;
+		} finally {
+			for (Lock lock : locks) {
+				lock.unlock();
+			}
+		} 
     }
 }

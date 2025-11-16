@@ -6,8 +6,8 @@ import com.hsbc.iwpb.mapper.SavingsAccountMapper;
 import com.hsbc.iwpb.mapper.DepositOrWithdrawHistoryMapper;
 import com.hsbc.iwpb.entity.DepositOrWithdrawHistory;
 import com.hsbc.iwpb.entity.MoneyTransferHistory;
-import com.hsbc.iwpb.entity.MoneyTransfer;
 import com.hsbc.iwpb.mapper.MoneyTransferHistoryMapper;
+import com.hsbc.iwpb.dto.MoneyTransferRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
@@ -16,6 +16,8 @@ import org.mockito.MockitoAnnotations;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -33,11 +35,11 @@ public class SavingsAccountServiceTest {
     @Mock
     private SavingsAccountMapper savingsAccountMapper;
     @Mock
-    private DepositOrWithdrawHistoryMapper userDepositOrWithdrawHistoryMapper;
+    private DepositOrWithdrawHistoryMapper depositOrWithdrawHistoryMapper;
     @Mock
     private RedisService redisService;
     @Mock
-    private MoneyTransferHistoryMapper transactionHistoryMapper;
+    private MoneyTransferHistoryMapper moneyTransferHistoryMapper;
     @InjectMocks
     private SavingsAccountService savingsAccountService;
 
@@ -52,6 +54,12 @@ public class SavingsAccountServiceTest {
         return account;
     }
 
+    private Lock mockLock() {
+        ReentrantLock lock = new ReentrantLock();
+        lock.lock(); // Ensure the lock is held by the current thread so unlock() is valid
+        return lock;
+    }
+
     @Test
     void getAccount_returnsAccount() {
         SavingsAccount account = mockAccountWithBalance(INITIAL_BALANCE);
@@ -63,8 +71,9 @@ public class SavingsAccountServiceTest {
     void depositOrWithdraw_depositSuccess() {
         SavingsAccount account = mockAccountWithBalance(INITIAL_BALANCE);
         when(savingsAccountMapper.findByAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(account);
-        when(userDepositOrWithdrawHistoryMapper.insert(any(DepositOrWithdrawHistory.class))).thenReturn(1);
+        when(depositOrWithdrawHistoryMapper.insert(any(DepositOrWithdrawHistory.class))).thenReturn(1);
         when(redisService.nextTransactionId()).thenReturn(TRANSACTION_ID);
+        when(redisService.getLock(VALID_ACCOUNT_NUMBER)).thenReturn(mockLock());
         SavingsAccount result = savingsAccountService.depositOrWithdraw(VALID_ACCOUNT_NUMBER, DEPOSIT_AMOUNT);
         assertEquals(account, result);
         verify(account).setBalance(INITIAL_BALANCE + DEPOSIT_AMOUNT);
@@ -76,8 +85,9 @@ public class SavingsAccountServiceTest {
     void depositOrWithdraw_withdrawSuccess() {
         SavingsAccount account = mockAccountWithBalance(INITIAL_BALANCE);
         when(savingsAccountMapper.findByAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(account);
-        when(userDepositOrWithdrawHistoryMapper.insert(any(DepositOrWithdrawHistory.class))).thenReturn(1);
+        when(depositOrWithdrawHistoryMapper.insert(any(DepositOrWithdrawHistory.class))).thenReturn(1);
         when(redisService.nextTransactionId()).thenReturn(TRANSACTION_ID);
+        when(redisService.getLock(VALID_ACCOUNT_NUMBER)).thenReturn(mockLock());
         SavingsAccount result = savingsAccountService.depositOrWithdraw(VALID_ACCOUNT_NUMBER, WITHDRAW_AMOUNT);
         assertEquals(account, result);
         verify(account).setBalance(INITIAL_BALANCE + WITHDRAW_AMOUNT);
@@ -107,13 +117,14 @@ public class SavingsAccountServiceTest {
         SavingsAccount account = mockAccountWithBalance(INITIAL_BALANCE);
         when(savingsAccountMapper.findByAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(account);
         when(redisService.nextTransactionId()).thenReturn(TRANSACTION_ID);
-        doThrow(new RuntimeException("Simulated DB error")).when(userDepositOrWithdrawHistoryMapper).insert(any(DepositOrWithdrawHistory.class));
+        when(redisService.getLock(VALID_ACCOUNT_NUMBER)).thenReturn(mockLock());
+        doThrow(new RuntimeException("Simulated DB error")).when(depositOrWithdrawHistoryMapper).insert(any(DepositOrWithdrawHistory.class));
         assertThrows(RuntimeException.class, () ->
                 savingsAccountService.depositOrWithdraw(VALID_ACCOUNT_NUMBER, DEPOSIT_AMOUNT));
         verify(account).setBalance(INITIAL_BALANCE + DEPOSIT_AMOUNT);
         verify(account).setLastUpdated(any(LocalDateTime.class));
         verify(savingsAccountMapper).update(account);
-        verify(userDepositOrWithdrawHistoryMapper).insert(any(DepositOrWithdrawHistory.class));
+        verify(depositOrWithdrawHistoryMapper).insert(any(DepositOrWithdrawHistory.class));
     }
 
     @Test
@@ -134,33 +145,6 @@ public class SavingsAccountServiceTest {
     }
 
     @Test
-    void updateBalance_updatesBalanceSuccessfully() {
-        SavingsAccount account = mockAccountWithBalance(INITIAL_BALANCE);
-        when(savingsAccountMapper.findByAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(account);
-        savingsAccountService.updateBalance(VALID_ACCOUNT_NUMBER, 2000L);
-        verify(account).setBalance(2000L);
-        verify(account).setLastUpdated(any(LocalDateTime.class));
-        verify(savingsAccountMapper).update(account);
-    }
-
-    @Test
-    void updateBalance_accountNotFound_throws() {
-        when(savingsAccountMapper.findByAccountNumber(INVALID_ACCOUNT_NUMBER)).thenReturn(null);
-        Exception ex = assertThrows(IllegalArgumentException.class, () ->
-                savingsAccountService.updateBalance(INVALID_ACCOUNT_NUMBER, 2000L));
-        assertTrue(ex.getMessage().contains("does not exist"));
-    }
-
-    @Test
-    void updateBalance_negativeBalance_throws() {
-        SavingsAccount account = mockAccountWithBalance(INITIAL_BALANCE);
-        when(savingsAccountMapper.findByAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(account);
-        Exception ex = assertThrows(IllegalArgumentException.class, () ->
-                savingsAccountService.updateBalance(VALID_ACCOUNT_NUMBER, -1L));
-        assertTrue(ex.getMessage().contains("Balance cannot be negative"));
-    }
-
-    @Test
     void listAccounts_returnsAccounts() {
         List<SavingsAccount> accounts = List.of(mockAccountWithBalance(100L), mockAccountWithBalance(200L));
         when(savingsAccountMapper.listAll()).thenReturn(accounts);
@@ -170,57 +154,131 @@ public class SavingsAccountServiceTest {
     @Test
     void listDepositOrWithdrawHistory_returnsHistory() {
         List<DepositOrWithdrawHistory> history = List.of(mock(DepositOrWithdrawHistory.class));
-        when(userDepositOrWithdrawHistoryMapper.findByAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(history);
+        when(depositOrWithdrawHistoryMapper.findByAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(history);
         assertEquals(history, savingsAccountService.listDepositOrWithdrawHistory(VALID_ACCOUNT_NUMBER));
     }
 
     @Test
     void findByTransactionId_returnsHistory() {
         MoneyTransferHistory history = mock(MoneyTransferHistory.class);
-        when(transactionHistoryMapper.findByTransactionId(TRANSACTION_ID)).thenReturn(history);
+        when(moneyTransferHistoryMapper.findByTransactionId(TRANSACTION_ID)).thenReturn(history);
         assertEquals(history, savingsAccountService.findByTransactionId(TRANSACTION_ID));
     }
 
     @Test
     void findBySourceAccountNumber_returnsList() {
         List<MoneyTransferHistory> list = List.of(mock(MoneyTransferHistory.class));
-        when(transactionHistoryMapper.findBySourceAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(list);
+        when(moneyTransferHistoryMapper.findBySourceAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(list);
         assertEquals(list, savingsAccountService.findBySourceAccountNumber(VALID_ACCOUNT_NUMBER));
     }
 
     @Test
     void findByDestinationAccountNumber_returnsList() {
         List<MoneyTransferHistory> list = List.of(mock(MoneyTransferHistory.class));
-        when(transactionHistoryMapper.findByDestinationAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(list);
+        when(moneyTransferHistoryMapper.findByDestinationAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(list);
         assertEquals(list, savingsAccountService.findByDestinationAccountNumber(VALID_ACCOUNT_NUMBER));
     }
 
     @Test
     void findBySourceAndDestinationAccountNumber_returnsList() {
         List<MoneyTransferHistory> list = List.of(mock(MoneyTransferHistory.class));
-        when(transactionHistoryMapper.findBySourceAndDestinationAccountNumber(VALID_ACCOUNT_NUMBER, 2002L)).thenReturn(list);
+        when(moneyTransferHistoryMapper.findBySourceAndDestinationAccountNumber(VALID_ACCOUNT_NUMBER, 2002L)).thenReturn(list);
         assertEquals(list, savingsAccountService.findBySourceAndDestinationAccountNumber(VALID_ACCOUNT_NUMBER, 2002L));
     }
 
     @Test
     void listAllMoneyTransferHistories_returnsList() {
         List<MoneyTransferHistory> list = List.of(mock(MoneyTransferHistory.class));
-        when(transactionHistoryMapper.listAll()).thenReturn(list);
+        when(moneyTransferHistoryMapper.listAll()).thenReturn(list);
         assertEquals(list, savingsAccountService.listAllMoneyTransferHistories());
     }
 
     @Test
-    void processTransaction_lockAcquisitionFailure_throws() {
-        MoneyTransfer transfer = mock(MoneyTransfer.class);
-        when(transfer.sourceAccountNumber()).thenReturn(VALID_ACCOUNT_NUMBER);
-        when(transfer.destinationAccountNumber()).thenReturn(2002L);
-        SavingsAccount account = mockAccountWithBalance(INITIAL_BALANCE);
-        when(savingsAccountMapper.findByAccountNumber(VALID_ACCOUNT_NUMBER)).thenReturn(account);
-        // Simulate lock acquisition failure
-        when(redisService.getLock(VALID_ACCOUNT_NUMBER)).thenReturn(null);
-        // The retry logic may swallow the exception, so we need to ensure it propagates
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
-                savingsAccountService.processTransaction(transfer));
-        assertTrue(ex.getMessage().contains("Could not acquire lock"));
+    void processMoneyTransfer_success() {
+        MoneyTransferRequest req = new MoneyTransferRequest(1001L, 2002L, 100L);
+        SavingsAccount sa = mockAccountWithBalance(200L); // Sufficient funds
+        SavingsAccount dest = mockAccountWithBalance(100L);
+        when(savingsAccountMapper.findByAccountNumber(1001L)).thenReturn(sa);
+        when(savingsAccountMapper.findByAccountNumber(2002L)).thenReturn(dest);
+        when(redisService.getLock(anyLong())).thenReturn(mock(Lock.class));
+        when(redisService.nextTransactionId()).thenReturn(1L);
+        SavingsAccount result = savingsAccountService.processMoneyTransfer(req);
+        assertNotNull(result);
+    }
+
+    @Test
+    void processMoneyTransfer_successfulTransfer() {
+        MoneyTransferRequest req = new MoneyTransferRequest(1001L, 2002L, 100L);
+        SavingsAccount source = mockAccountWithBalance(200L);
+        SavingsAccount dest = mockAccountWithBalance(100L);
+        when(savingsAccountMapper.findByAccountNumber(1001L)).thenReturn(source);
+        when(savingsAccountMapper.findByAccountNumber(2002L)).thenReturn(dest);
+        when(redisService.getLock(anyLong())).thenReturn(mock(Lock.class));
+        when(redisService.nextTransactionId()).thenReturn(1L);
+        SavingsAccount result = savingsAccountService.processMoneyTransfer(req);
+        assertNotNull(result);
+        verify(savingsAccountMapper, atLeastOnce()).update(source);
+        verify(savingsAccountMapper, atLeastOnce()).update(dest);
+    }
+
+    @Test
+    void processMoneyTransfer_insufficientFunds_throws() {
+        MoneyTransferRequest req = new MoneyTransferRequest(1001L, 2002L, 500L);
+        SavingsAccount source = mockAccountWithBalance(100L);
+        when(savingsAccountMapper.findByAccountNumber(1001L)).thenReturn(source);
+        Exception ex = assertThrows(IllegalArgumentException.class, () ->
+            savingsAccountService.processMoneyTransfer(req));
+        assertTrue(ex.getMessage().contains("Insufficient funds"));
+    }
+
+    @Test
+    void processMoneyTransfer_sourceAccountNotFound_throws() {
+        MoneyTransferRequest req = new MoneyTransferRequest(9999L, 2002L, 100L);
+        when(savingsAccountMapper.findByAccountNumber(9999L)).thenReturn(null);
+        assertThrows(NullPointerException.class, () ->
+            savingsAccountService.processMoneyTransfer(req));
+    }
+
+    @Test
+    void processMoneyTransfer_destinationAccountNotFound_throws() {
+        MoneyTransferRequest req = new MoneyTransferRequest(1001L, 8888L, 100L);
+        SavingsAccount source = mockAccountWithBalance(200L);
+        when(savingsAccountMapper.findByAccountNumber(1001L)).thenReturn(source);
+        when(savingsAccountMapper.findByAccountNumber(8888L)).thenReturn(null);
+        when(redisService.getLock(anyLong())).thenReturn(mock(Lock.class));
+        when(redisService.nextTransactionId()).thenReturn(1L);
+        assertThrows(NullPointerException.class, () ->
+            savingsAccountService.processMoneyTransfer(req));
+    }
+
+    @Test
+    void processMoneyTransfer_lockAcquisitionFails_throws() {
+        MoneyTransferRequest req = new MoneyTransferRequest(1001L, 2002L, 100L);
+        SavingsAccount source = mockAccountWithBalance(200L);
+        SavingsAccount dest = mockAccountWithBalance(100L);
+        when(savingsAccountMapper.findByAccountNumber(1001L)).thenReturn(source);
+        when(savingsAccountMapper.findByAccountNumber(2002L)).thenReturn(dest);
+        when(redisService.getLock(1001L)).thenReturn(null); // Simulate lock failure
+        assertThrows(IllegalStateException.class, () ->
+            savingsAccountService.processMoneyTransfer(req));
+    }
+
+    @Test
+    void processMoneyTransfer_exceptionDuringTransfer_releasesLocks() {
+        MoneyTransferRequest req = new MoneyTransferRequest(1001L, 2002L, 100L);
+        SavingsAccount source = mockAccountWithBalance(200L);
+        SavingsAccount dest = mockAccountWithBalance(100L);
+        Lock lock1 = mock(Lock.class);
+        Lock lock2 = mock(Lock.class);
+        when(savingsAccountMapper.findByAccountNumber(1001L)).thenReturn(source);
+        when(savingsAccountMapper.findByAccountNumber(2002L)).thenReturn(dest);
+        when(redisService.getLock(1001L)).thenReturn(lock1);
+        when(redisService.getLock(2002L)).thenReturn(lock2);
+        when(redisService.nextTransactionId()).thenReturn(1L);
+        doThrow(new RuntimeException("DB error")).when(moneyTransferHistoryMapper).insert(any(MoneyTransferHistory.class));
+        assertThrows(RuntimeException.class, () ->
+            savingsAccountService.processMoneyTransfer(req));
+        verify(lock1).unlock();
+        verify(lock2).unlock();
     }
 }
