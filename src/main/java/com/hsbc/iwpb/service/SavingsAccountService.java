@@ -34,6 +34,16 @@ public class SavingsAccountService {
     private final DepositOrWithdrawHistoryMapper userDepositOrWithdrawHistoryMapper;
     private final MoneyTransferHistoryMapper moneyTransferHistoryMapper;
 
+    private static final RetryConfig lockAccountRetryConfig = RetryConfig.custom()
+            .maxAttempts(3)
+            .waitDuration(Duration.ofMillis(100))
+            .build();
+    
+    private static final RetryConfig moneyTransferRetryConfig = RetryConfig.custom()
+            .maxAttempts(3)
+            .waitDuration(Duration.ofMillis(200))
+            .build();
+    
     @Autowired
     public SavingsAccountService(SavingsAccountMapper savingsAccountMapper, RedisService redisService, DepositOrWithdrawHistoryMapper userDepositOrWithdrawHistoryMapper, MoneyTransferHistoryMapper ahm) {
         this.savingsAccountMapper = savingsAccountMapper;
@@ -118,27 +128,19 @@ public class SavingsAccountService {
     }
     
     private Lock lockAccount(long accountNumber) {
-    	RetryConfig retryConfig = RetryConfig.custom()
-                .maxAttempts(3)
-                .waitDuration(Duration.ofMillis(100))
-                .build();
-        final Retry retry = Retry.of("transactionServiceRetry", retryConfig);
+        final Retry retry = Retry.of("lockAccountRetry", lockAccountRetryConfig);
         Supplier<Lock> lockSupplier = Retry.decorateSupplier(retry, () -> {
-            Lock sourceAccountLock = redisService.getLock(accountNumber);
-            if (sourceAccountLock == null) {
+            Lock accountLock = redisService.getLock(accountNumber);
+            if (accountLock == null) {
                 throw new IllegalStateException("Could not acquire lock for source account: " + accountNumber);
             }
-            return sourceAccountLock;
+            return accountLock;
         });
         return lockSupplier.get();
 	}
     
     private Lock[] lockAccounts(long sourceAccountNumber, long destinationAccountNumber) {
-    	RetryConfig retryConfig = RetryConfig.custom()
-                .maxAttempts(3)
-                .waitDuration(Duration.ofMillis(100))
-                .build();
-        final Retry retry = Retry.of("transactionServiceRetry", retryConfig);
+        final Retry retry = Retry.of("lockAccountsRetry", lockAccountRetryConfig);
         Supplier<Lock[]> lockSupplier = Retry.decorateSupplier(retry, () -> {
             Lock sourceAccountLock = redisService.getLock(sourceAccountNumber);
             if (sourceAccountLock == null) {
@@ -166,27 +168,33 @@ public class SavingsAccountService {
         
         Lock[] locks = lockAccounts(san, dan);
         try  {
-        	// save money transfer history
-            long tid = redisService.nextTransactionId();
-            MoneyTransferHistory transfer = new MoneyTransferHistory(tid, san, dan, req.amount(), LocalDateTime.now());
-            this.moneyTransferHistoryMapper.insert(transfer);
-            log.info("Recorded money transfer: {}", transfer);
+            final Retry retry = Retry.of("processMoneyTransferRetry", moneyTransferRetryConfig);
             
-            // reduce money in source account
-            SavingsAccount sourceAccount = this.savingsAccountMapper.findByAccountNumber(san);
-            sourceAccount.setBalance(sourceAccount.getBalance() - req.amount());	
-            this.savingsAccountMapper.update(sourceAccount);
-            log.info("Debited source account {} by amount {}. New balance: {}", san, req.amount(), sourceAccount.getBalance());
+            Supplier<SavingsAccount> accountSupplier = Retry.decorateSupplier(retry, () -> {
+	        	// save money transfer history
+	            long tid = redisService.nextTransactionId();
+	            MoneyTransferHistory transfer = new MoneyTransferHistory(tid, san, dan, req.amount(), LocalDateTime.now());
+	            this.moneyTransferHistoryMapper.insert(transfer);
+	            log.info("Recorded money transfer: {}", transfer);
+	            
+	            // reduce money in source account
+	            SavingsAccount sourceAccount = this.savingsAccountMapper.findByAccountNumber(san);
+	            sourceAccount.setBalance(sourceAccount.getBalance() - req.amount());	
+	            this.savingsAccountMapper.update(sourceAccount);
+	            log.info("Debited source account {} by amount {}. New balance: {}", san, req.amount(), sourceAccount.getBalance());
+	            
+	            // increment money in destination account
+	            SavingsAccount destinationAccount = this.savingsAccountMapper.findByAccountNumber(dan);
+	            destinationAccount.setBalance(destinationAccount.getBalance() + req.amount());
+	            this.savingsAccountMapper.update(destinationAccount);
+	            log.info("Credited destination account {} by amount {}. New balance: {}", dan, req.amount(), destinationAccount.getBalance());
+	            
+	            return sourceAccount;
+            });
             
-            // increment money in destination account
-            SavingsAccount destinationAccount = this.savingsAccountMapper.findByAccountNumber(dan);
-            destinationAccount.setBalance(destinationAccount.getBalance() + req.amount());
-            this.savingsAccountMapper.update(destinationAccount);
-            log.info("Credited destination account {} by amount {}. New balance: {}", dan, req.amount(), destinationAccount.getBalance());
-            
-            return sourceAccount;
+            return accountSupplier.get();
         } catch (Exception e) {
-			log.error("Error processing transaction: {}", e.getMessage());
+			log.error("Error processing transaction: {}, req:{}", e.getMessage(), req);
 			throw e;
 		} finally {
 			for (Lock lock : locks) {

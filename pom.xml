@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.example</groupId>
-    <artifactId>hello-springboot</artifactId>
+    <artifactId>hsbc-springboot</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <packaging>jar</packaging>
 
@@ -80,19 +80,6 @@
             <artifactId>mybatis-spring-boot-starter</artifactId>
             <version>${mybatis.spring.boot.version}</version>
         </dependency>
-        <!-- H2 in-memory DB for development / tests (optional) -->
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <!-- MyBatis JSR-310 type handlers for JavaTime (LocalDateTime) mapping -->
-        <dependency>
-            <groupId>org.mybatis</groupId>
-            <artifactId>mybatis-typehandlers-jsr310</artifactId>
-            <version>1.0.2</version>
-        </dependency>
-
         <!-- MySQL JDBC driver for local MySQL connectivity -->
         <dependency>
             <groupId>com.mysql</groupId>

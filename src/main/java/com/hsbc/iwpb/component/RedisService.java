@@ -1,18 +1,14 @@
 package com.hsbc.iwpb.component;
 
 import java.util.concurrent.locks.Lock;
-import java.time.Duration;
-import java.util.function.Supplier;
 
 import org.redisson.api.RAtomicLong;
 import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
-
-import io.github.resilience4j.retry.Retry;
-import io.github.resilience4j.retry.RetryConfig;
 
 @Component
 public class RedisService {
@@ -22,7 +18,12 @@ public class RedisService {
     private final RedissonClient redissonClient;
 
     @Autowired
-    public RedisService(RedissonClient redissonClient) {
+    public RedisService(RedissonClient redissonClient, Environment env) {
+        // Log the redis host and port property at bean creation time
+        String redisHost = env.getProperty("spring.redis.host", "NOT_SET");
+        String redisPort = env.getProperty("spring.redis.port", "NOT_SET");
+        log.info("[DIAG] spring.redis.host property in RedisService: {}", redisHost);
+        log.info("[DIAG] spring.redis.port property in RedisService: {}", redisPort);
         this.redissonClient = redissonClient;
     }
 
@@ -45,21 +46,9 @@ public class RedisService {
      * @return next transaction id (monotonic increasing long)
      */
     public long nextTransactionId() {
-    	RetryConfig retryConfig = RetryConfig.custom()
-                .maxAttempts(3)
-                .waitDuration(Duration.ofMillis(100))
-                .build();
-    	final Retry retry = Retry.of("transactionServiceRetry", retryConfig);
-    	
-        Supplier<Long> supplier = Retry.decorateSupplier(retry, () -> {
-            RAtomicLong seq = redissonClient.getAtomicLong("transaction:seq");
-            long id = seq.incrementAndGet();
-            log.info("Generated transaction id: {}", id);
-            return id;
-        });
-
-        // Execute supplier — Retry will retry on RuntimeExceptions
-        return supplier.get();
+        RAtomicLong seq = redissonClient.getAtomicLong("transaction:seq");
+        long id = seq.incrementAndGet();
+        log.info("Generated transaction id: {}", id);
+        return id;
     }
-    
 }
