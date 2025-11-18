@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: '13'
+  creationTimestamp: '2025-11-17T10:51:38Z'
+  generation: 15
+  labels:
+    app: hsbc
+  name: hsbc
+  namespace: default
+  resourceVersion: '656699'
+  uid: 2c61f056-22b1-446b-aeb5-a066a0c899d9
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: hsbc
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        redeploy-timestamp: '1763443366420'
+      labels:
+        app: hsbc
+    spec:
+      containers:
+        - env:
+            - name: DB_HOST
+              value: your_db_host_on_cloud
+            - name: DB_USERNAME
+              value: your_user_on_cloud_db
+            - name: DB_PASSWORD
+              value: your_password_on_cloud_db
+            - name: REDIS_HOST
+              value: your_redis_host_on_cloud
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod #could be dev, staging, prod
+          image: >-
+            crpi-72qfiuq4hwm1chuo-vpc.cn-shanghai.personal.cr.aliyuncs.com/jack-xu/hsbc:latest
+          imagePullPolicy: IfNotPresent
+          name: hsbc
+          resources:
+            limits:
+              cpu: 500m
+              ephemeral-storage: 1Gi
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              ephemeral-storage: 1Gi
+              memory: 512Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
