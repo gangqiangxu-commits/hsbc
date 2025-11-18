@@ -11,8 +11,8 @@ public class OpenApiConfig {
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("HSBC Account API")
+                        .title("HSBC Savings Account API")
                         .version("1.0.0")
-                        .description("API documentation for HSBC Account Service"));
+                        .description("API documentation for HSBC Savings Account Service"));
     }
 }
