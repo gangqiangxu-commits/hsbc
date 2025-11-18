@@ -2,7 +2,7 @@
 REM build and deploy hsbc project
 
 REM Step 1: Build the hsbc jar
-call mvn clean package -DskipTests -Dspring.profiles.active=prod
+call mvn clean package -DskipTests
 if %errorlevel% neq 0 (
     echo Maven build failed!
     exit /b %errorlevel%

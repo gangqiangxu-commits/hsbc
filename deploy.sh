@@ -2,7 +2,7 @@
 # build and deploy hsbc project
 
 # Step 1: Build the hsbc jar
-mvn clean package -DskipTests -Dspring.profiles.active=prod
+mvn clean package -DskipTests
 if [ $? -ne 0 ]; then
     echo "Maven build failed!"
     exit $?

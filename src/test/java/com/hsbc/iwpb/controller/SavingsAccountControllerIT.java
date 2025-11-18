@@ -3,6 +3,7 @@ package com.hsbc.iwpb.controller;
 import com.hsbc.iwpb.dto.OpenAccountRequest;
 import com.hsbc.iwpb.dto.DepositWithdrawRequest;
 import com.hsbc.iwpb.entity.SavingsAccount;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -10,12 +11,17 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.*;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.redisson.api.RedissonClient;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import com.hsbc.iwpb.dto.MoneyTransferResponse;
+
+import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = {com.hsbc.iwpb.SavingsAccountApplication.class, com.hsbc.iwpb.config.TestRedissonConfig.class})
 @ActiveProfiles("test")
 public class SavingsAccountControllerIT {
 
@@ -24,9 +30,6 @@ public class SavingsAccountControllerIT {
 
     @Autowired
     private TestRestTemplate restTemplate;
-
-    @MockBean
-    private RedissonClient redissonClient;
 
     @Test
     void canOpenAccountAndDeposit() {
@@ -49,5 +52,81 @@ public class SavingsAccountControllerIT {
         String baseUrl = "http://localhost:" + port;
         ResponseEntity<SavingsAccount[]> response = restTemplate.getForEntity(baseUrl + "/accounts", SavingsAccount[].class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void batchMoneyTransfer_success() {
+        try {
+            String baseUrl = "http://localhost:" + port;
+            // Create source and destination accounts for both transfers
+            SavingsAccount sa1 = restTemplate.postForEntity(baseUrl + "/account", new OpenAccountRequest("User1", 1001L), SavingsAccount.class).getBody();
+            SavingsAccount sa2 = restTemplate.postForEntity(baseUrl + "/account", new OpenAccountRequest("User2", 2001L), SavingsAccount.class).getBody();
+            SavingsAccount sa3 = restTemplate.postForEntity(baseUrl + "/account", new OpenAccountRequest("User3", 1002L), SavingsAccount.class).getBody();
+            SavingsAccount sa4 = restTemplate.postForEntity(baseUrl + "/account", new OpenAccountRequest("User4", 2002L), SavingsAccount.class).getBody();
+            // Also create and fund account 5 in case it is referenced by other logic
+            SavingsAccount sa5 = restTemplate.postForEntity(baseUrl + "/account", new OpenAccountRequest("User5", 5L), SavingsAccount.class).getBody();
+            restTemplate.postForEntity(baseUrl + "/account:depositOrWithdraw", new DepositWithdrawRequest(sa5.getAccountNumber(), 10000L), String.class);
+            // Fund source accounts
+            restTemplate.postForEntity(baseUrl + "/account:depositOrWithdraw", new DepositWithdrawRequest(sa1.getAccountNumber(), 50000L), String.class);
+            restTemplate.postForEntity(baseUrl + "/account:depositOrWithdraw", new DepositWithdrawRequest(sa3.getAccountNumber(), 50000L), String.class);
+
+            // Use actual account numbers in space-separated format
+            String txt = sa1.getAccountNumber() + " " + sa2.getAccountNumber() + " 500\n" + sa3.getAccountNumber() + " " + sa4.getAccountNumber() + " 1000\n";
+            ByteArrayResource resource = new ByteArrayResource(txt.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return "batch.txt";
+                }
+            };
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file", resource);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            ResponseEntity<MoneyTransferResponse[]> response = restTemplate.postForEntity(baseUrl + "/moneyTransfer:batch", requestEntity, MoneyTransferResponse[].class);
+            MoneyTransferResponse[] result = response.getBody();
+            // Enhanced debug output before assertions
+            System.out.println("HTTP status: " + response.getStatusCode());
+            if (result == null) {
+                System.out.println("Batch transfer results: null");
+            } else {
+                System.out.println("Batch transfer results: " + Arrays.toString(result));
+                for (int i = 0; i < result.length; i++) {
+                    System.out.println("Result[" + i + "]: success=" + result[i].success() + ", errorMessage=" + result[i].errorMessage());
+                }
+            }
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(result).isNotNull();
+            assertThat(result.length).isEqualTo(2);
+            assertThat(result[0].success()).isTrue();
+            assertThat(result[1].success()).isTrue();
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
+        }
+    }
+
+    @Test
+    void batchMoneyTransfer_fileFormatError() {
+        String baseUrl = "http://localhost:" + port;
+        String txt = "1001 2001\n1002 2002 1000\n"; // first row invalid (only 2 columns)
+        ByteArrayResource resource = new ByteArrayResource(txt.getBytes()) {
+            @Override
+            public String getFilename() {
+                return "batch.txt";
+            }
+        };
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", resource);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+        ResponseEntity<MoneyTransferResponse[]> response = restTemplate.postForEntity(baseUrl + "/moneyTransfer:batch", requestEntity, MoneyTransferResponse[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        MoneyTransferResponse[] result = response.getBody();
+        assertThat(result).isNotNull();
+        assertThat(result.length).isEqualTo(1);
+        assertThat(result[0].success()).isFalse();
+        assertThat(result[0].errorMessage()).contains("Invalid format");
     }
 }

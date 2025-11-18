@@ -25,7 +25,7 @@ public class TestRedissonConfig {
         Mockito.doNothing().when(mockLock).unlock();
 
         RAtomicLong mockAtomicLong = Mockito.mock(RAtomicLong.class);
-        AtomicLong counter = new AtomicLong(0);
+        AtomicLong counter = new AtomicLong(System.currentTimeMillis());
         when(mockClient.getAtomicLong(anyString())).thenReturn(mockAtomicLong);
         when(mockAtomicLong.incrementAndGet()).thenAnswer(invocation -> counter.incrementAndGet());
 

@@ -3,18 +3,22 @@ package com.hsbc.iwpb.controller;
 import com.hsbc.iwpb.dto.*;
 import com.hsbc.iwpb.entity.*;
 import com.hsbc.iwpb.service.SavingsAccountService;
+import com.hsbc.iwpb.util.SavingsAccountUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 public class SavingsAccountControllerTest {
@@ -41,7 +45,7 @@ public class SavingsAccountControllerTest {
         MoneyTransferRequest req = new MoneyTransferRequest(1L, 2L, 1000L);
         SavingsAccount sa = new SavingsAccount(1L, "Alice", 123L, 2000L, LocalDateTime.now(), LocalDateTime.now());
         when(savingsAccountService.processMoneyTransfer(req)).thenReturn(sa);
-        ResponseEntity<MoneyTransferResponse> response = controller.processTransactionJson(req);
+        ResponseEntity<MoneyTransferResponse> response = controller.processMoneyTransfer(req);
         assertNotNull(response.getBody());
         assertTrue(response.getBody().success());
         assertEquals(sa, response.getBody().sourceAccount());
@@ -53,7 +57,7 @@ public class SavingsAccountControllerTest {
     void testProcessTransactionJson_failure() {
         MoneyTransferRequest req = new MoneyTransferRequest(1L, 2L, 1000L);
         when(savingsAccountService.processMoneyTransfer(req)).thenThrow(new RuntimeException("fail"));
-        ResponseEntity<MoneyTransferResponse> response = controller.processTransactionJson(req);
+        ResponseEntity<MoneyTransferResponse> response = controller.processMoneyTransfer(req);
         assertNotNull(response.getBody());
         assertFalse(response.getBody().success());
         assertNull(response.getBody().sourceAccount());
@@ -166,5 +170,61 @@ public class SavingsAccountControllerTest {
         assertNotNull(response.getBody());
         assertEquals(1, response.getBody().size());
         assertEquals(h, response.getBody().get(0));
+    }
+
+    @Test
+    void batchMoneyTransfer_success() throws Exception {
+        String txt = "1001 2001 500\n1002 2002 1000\n";
+        MockMultipartFile file = new MockMultipartFile("file", "batch.txt", "text/plain", txt.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        SavingsAccount sa1 = new SavingsAccount(1001L, "A", 1L, 1000L, LocalDateTime.now(), LocalDateTime.now());
+        SavingsAccount sa2 = new SavingsAccount(1002L, "B", 2L, 2000L, LocalDateTime.now(), LocalDateTime.now());
+        List<MoneyTransferRequest> parsedRequests = List.of(
+                new MoneyTransferRequest(1001L, 2001L, 500L),
+                new MoneyTransferRequest(1002L, 2002L, 1000L)
+        );
+        List<MoneyTransferResponse> responses = List.of(
+                new MoneyTransferResponse(sa1, true, null),
+                new MoneyTransferResponse(sa2, true, null)
+        );
+        try (var mocked = org.mockito.Mockito.mockStatic(SavingsAccountUtil.class)) {
+            mocked.when(() -> SavingsAccountUtil.parseBatchMoneyTransferFile(any())).thenReturn(parsedRequests);
+            when(savingsAccountService.processMoneyTransfer(parsedRequests)).thenReturn(responses);
+            ResponseEntity<List<MoneyTransferResponse>> result = controller.batchMoneyTransfer(file);
+            assertEquals(200, result.getStatusCode().value());
+            assertNotNull(result.getBody());
+            assertEquals(2, result.getBody().size());
+            assertTrue(result.getBody().get(0).success());
+            assertTrue(result.getBody().get(1).success());
+        }
+    }
+
+    @Test
+    void batchMoneyTransfer_fileFormatError() throws Exception {
+        String txt = "bad format line\n";
+        MockMultipartFile file = new MockMultipartFile("file", "batch.txt", "text/plain", txt.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        try (var mocked = org.mockito.Mockito.mockStatic(SavingsAccountUtil.class)) {
+            mocked.when(() -> SavingsAccountUtil.parseBatchMoneyTransferFile(any())).thenThrow(new IllegalArgumentException("Invalid format"));
+            ResponseEntity<List<MoneyTransferResponse>> result = controller.batchMoneyTransfer(file);
+            assertEquals(400, result.getStatusCode().value());
+            assertNotNull(result.getBody());
+            assertEquals(1, result.getBody().size());
+            assertFalse(result.getBody().get(0).success());
+            assertTrue(result.getBody().get(0).errorMessage().contains("Invalid format"));
+        }
+    }
+
+    @Test
+    void batchMoneyTransfer_internalError() throws Exception {
+        String txt = "1001 2001 500\n";
+        MockMultipartFile file = new MockMultipartFile("file", "batch.txt", "text/plain", txt.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        try (var mocked = org.mockito.Mockito.mockStatic(SavingsAccountUtil.class)) {
+            mocked.when(() -> SavingsAccountUtil.parseBatchMoneyTransferFile(any())).thenThrow(new RuntimeException("IO error"));
+            ResponseEntity<List<MoneyTransferResponse>> result = controller.batchMoneyTransfer(file);
+            assertEquals(500, result.getStatusCode().value());
+            assertNotNull(result.getBody());
+            assertEquals(1, result.getBody().size());
+            assertFalse(result.getBody().get(0).success());
+            assertTrue(result.getBody().get(0).errorMessage().contains("Internal server error"));
+        }
     }
 }
