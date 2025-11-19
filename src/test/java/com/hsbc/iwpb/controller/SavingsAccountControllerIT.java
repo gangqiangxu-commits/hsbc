@@ -163,9 +163,15 @@ public class SavingsAccountControllerIT {
             ResponseEntity<String> depResp = restTemplate.postForEntity(baseUrl + "/account:depositOrWithdraw", depReq, String.class);
             assertThat(depResp.getStatusCode()).isEqualTo(HttpStatus.OK);
         }
-        // Request a mock transactions file with 2 sources and 2 destinations each
-        String url = baseUrl + "/mock-transactions:download?countOfSourceAccounts=2&countOfDestinationAccountsForEachSourceAccount=2";
-        ResponseEntity<byte[]> response = restTemplate.getForEntity(url, byte[].class);
+        // Request a mock transactions file with 2 sources and 2 destinations each (now POST instead of GET)
+        String url = baseUrl + "/mock-transactions:download";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        org.springframework.util.MultiValueMap<String, String> params = new org.springframework.util.LinkedMultiValueMap<>();
+        params.add("countOfSourceAccounts", "2");
+        params.add("countOfDestinationAccountsForEachSourceAccount", "2");
+        HttpEntity<org.springframework.util.MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
+        ResponseEntity<byte[]> response = restTemplate.postForEntity(url, request, byte[].class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.TEXT_PLAIN);
         assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)).contains("attachment; filename=mock-transactions.csv");

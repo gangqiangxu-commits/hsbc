@@ -84,7 +84,7 @@ public class SavingsAccountControllerTest {
         ResponseEntity<List<SavingsAccount>> response = controller.batchOpenAccounts(-1, -1);
         assertNotNull(response.getBody());
         assertFalse(response.getBody().isEmpty());
-        assertEquals(10000, response.getBody().size());
+        assertEquals(1000, response.getBody().size());
         for (SavingsAccount account : response.getBody()) {
             assertNotNull(account);
         }

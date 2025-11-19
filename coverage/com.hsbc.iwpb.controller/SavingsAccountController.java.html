@@ -69,118 +69,120 @@ public class SavingsAccountController {
     public ResponseEntity&lt;List&lt;SavingsAccount&gt;&gt; batchOpenAccounts(@RequestParam int numAccounts, @RequestParam int balance) {
 <span class="fc" id="L70">		log.info(&quot;Received request to create {} accounts with balance={}&quot;, numAccounts, balance);</span>
 		
-<span class="pc bpc" id="L72" title="1 of 2 branches missed.">		if (balance &lt;= 0) {</span>
-<span class="fc" id="L73">			balance = 10000; // default balance</span>
-<span class="fc" id="L74">			log.info(&quot;Using default balance={}&quot;, balance);</span>
+<span class="fc" id="L72">		final int max = 1000;</span>
+		
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">		if (balance &lt;= 0) {</span>
+<span class="fc" id="L75">			balance = max; // default balance</span>
+<span class="fc" id="L76">			log.info(&quot;Using default balance={}&quot;, balance);</span>
 		}
 		
-<span class="pc bpc" id="L77" title="3 of 4 branches missed.">		if (numAccounts &lt;= 0 || numAccounts &gt; 1000) {</span>
-<span class="fc" id="L78">			numAccounts = 10000; // default number of accounts</span>
-<span class="fc" id="L79">			log.info(&quot;Using default numAccounts={}&quot;, numAccounts);</span>
+<span class="pc bpc" id="L79" title="3 of 4 branches missed.">		if (numAccounts &lt;= 0 || numAccounts &gt; max) {</span>
+<span class="fc" id="L80">			numAccounts = max; // default number of accounts</span>
+<span class="fc" id="L81">			log.info(&quot;Using default numAccounts={}&quot;, numAccounts);</span>
 		}
 		
-<span class="fc" id="L82">    	List&lt;SavingsAccount&gt; createdAccounts = openAccounts(numAccounts, balance);</span>
-<span class="fc" id="L83">        return ResponseEntity.ok(createdAccounts);</span>
+<span class="fc" id="L84">    	List&lt;SavingsAccount&gt; createdAccounts = openAccounts(numAccounts, balance);</span>
+<span class="fc" id="L85">        return ResponseEntity.ok(createdAccounts);</span>
     }
 
 	private List&lt;SavingsAccount&gt; openAccounts(int numAccounts, int balance) {
-<span class="fc" id="L87">		List&lt;SavingsAccount&gt; createdAccounts = new java.util.ArrayList&lt;&gt;();</span>
-<span class="fc bfc" id="L88" title="All 2 branches covered.">        for (int i=0; i&lt;numAccounts; i++) {</span>
-<span class="fc" id="L89">			String name = &quot;Mocked User&quot; + (1000 + i);</span>
-<span class="fc" id="L90">			long personalId = 200000 + i;</span>
-<span class="fc" id="L91">			SavingsAccount sa = savingsAccountService.createAccount(name, personalId);</span>
-<span class="fc" id="L92">			savingsAccountService.depositOrWithdraw(sa.getAccountNumber(), balance);</span>
-<span class="fc" id="L93">			sa = savingsAccountService.getAccount(sa.getAccountNumber());</span>
-<span class="fc" id="L94">			log.info(&quot;Created mock account: accountNumber={}, name={}, personalId={}, balance={}&quot;, sa.getAccountNumber(), name, personalId, sa.getBalance());</span>
-<span class="fc" id="L95">			createdAccounts.add(sa);</span>
+<span class="fc" id="L89">		List&lt;SavingsAccount&gt; createdAccounts = new java.util.ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L90" title="All 2 branches covered.">        for (int i=0; i&lt;numAccounts; i++) {</span>
+<span class="fc" id="L91">			String name = &quot;Mocked User&quot; + (1000 + i);</span>
+<span class="fc" id="L92">			long personalId = 200000 + i;</span>
+<span class="fc" id="L93">			SavingsAccount sa = savingsAccountService.createAccount(name, personalId);</span>
+<span class="fc" id="L94">			savingsAccountService.depositOrWithdraw(sa.getAccountNumber(), balance);</span>
+<span class="fc" id="L95">			sa = savingsAccountService.getAccount(sa.getAccountNumber());</span>
+<span class="fc" id="L96">			log.info(&quot;Created mock account: accountNumber={}, name={}, personalId={}, balance={}&quot;, sa.getAccountNumber(), name, personalId, sa.getBalance());</span>
+<span class="fc" id="L97">			createdAccounts.add(sa);</span>
 		}
-<span class="fc" id="L97">		return createdAccounts;</span>
+<span class="fc" id="L99">		return createdAccounts;</span>
 	}
     
     @PostMapping(path = &quot;/account:depositOrWithdraw&quot;, consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity&lt;DepositWithdrawResponse&gt; depositWithdraw(@RequestBody DepositWithdrawRequest req) {
         try {
-<span class="fc" id="L103">        	SavingsAccount sa = savingsAccountService.depositOrWithdraw(req.accountNumber(), req.amount());</span>
-<span class="fc" id="L104">        	return ResponseEntity.ok(new DepositWithdrawResponse(sa, true, &quot;&quot;));</span>
-<span class="fc" id="L105">        } catch (Exception e) {</span>
-<span class="fc" id="L106">			log.error(&quot;Error during deposit/withdraw for accountNumber={}, amount={}: {}&quot;, req.accountNumber(), req.amount(), e.getMessage());</span>
-<span class="fc" id="L107">			return ResponseEntity.ofNullable(new DepositWithdrawResponse(null, false, e.getMessage()));</span>
+<span class="fc" id="L105">        	SavingsAccount sa = savingsAccountService.depositOrWithdraw(req.accountNumber(), req.amount());</span>
+<span class="fc" id="L106">        	return ResponseEntity.ok(new DepositWithdrawResponse(sa, true, &quot;&quot;));</span>
+<span class="fc" id="L107">        } catch (Exception e) {</span>
+<span class="fc" id="L108">			log.error(&quot;Error during deposit/withdraw for accountNumber={}, amount={}: {}&quot;, req.accountNumber(), req.amount(), e.getMessage());</span>
+<span class="fc" id="L109">			return ResponseEntity.ofNullable(new DepositWithdrawResponse(null, false, e.getMessage()));</span>
 		}   
     }
 
     @GetMapping(&quot;/accounts&quot;)
     public ResponseEntity&lt;List&lt;SavingsAccount&gt;&gt; listAccounts() {
-<span class="fc" id="L113">        return ResponseEntity.ok(savingsAccountService.listAccounts());</span>
+<span class="fc" id="L115">        return ResponseEntity.ok(savingsAccountService.listAccounts());</span>
     }
     
     @GetMapping(&quot;/account&quot;)
     public ResponseEntity&lt;SavingsAccount&gt; getAccount(@RequestParam(&quot;accountNumber&quot;) long accountNumber) {
-<span class="fc" id="L118">        return ResponseEntity.ok(savingsAccountService.getAccount(accountNumber));</span>
+<span class="fc" id="L120">        return ResponseEntity.ok(savingsAccountService.getAccount(accountNumber));</span>
     }
 
     @GetMapping(&quot;/account/depositOrWithdraw:history&quot;)
     public ResponseEntity&lt;List&lt;DepositOrWithdrawHistory&gt;&gt; listDepositOrWithdrawHistory(@RequestParam(&quot;accountNumber&quot;) long accountNumber) {
-<span class="fc" id="L123">        return ResponseEntity.ok(savingsAccountService.listDepositOrWithdrawHistory(accountNumber));</span>
+<span class="fc" id="L125">        return ResponseEntity.ok(savingsAccountService.listDepositOrWithdrawHistory(accountNumber));</span>
     }
     
     @GetMapping(&quot;/transfer:search:by-transaction-id&quot;)
     public ResponseEntity&lt;MoneyTransferHistory&gt; findByTransactionId(@RequestParam(&quot;transactionId&quot;) long transactionId) {
-<span class="fc" id="L128">        return ResponseEntity.ok(savingsAccountService.findByTransactionId(transactionId));</span>
+<span class="fc" id="L130">        return ResponseEntity.ok(savingsAccountService.findByTransactionId(transactionId));</span>
     }
 
     @GetMapping(&quot;/transfer:search:by-source-account&quot;)
     public ResponseEntity&lt;List&lt;MoneyTransferHistory&gt;&gt; findBySourceAccountNumber(@RequestParam(&quot;accountNumber&quot;) long accountNumber) {
-<span class="fc" id="L133">        return ResponseEntity.ok(savingsAccountService.findBySourceAccountNumber(accountNumber));</span>
+<span class="fc" id="L135">        return ResponseEntity.ok(savingsAccountService.findBySourceAccountNumber(accountNumber));</span>
     }
 
     @GetMapping(&quot;/transfer:search:by-destination-account&quot;)
     public ResponseEntity&lt;List&lt;MoneyTransferHistory&gt;&gt; findByDestinationAccountNumber(@RequestParam(&quot;accountNumber&quot;) long accountNumber) {
-<span class="fc" id="L138">        return ResponseEntity.ok(savingsAccountService.findByDestinationAccountNumber(accountNumber));</span>
+<span class="fc" id="L140">        return ResponseEntity.ok(savingsAccountService.findByDestinationAccountNumber(accountNumber));</span>
     }
 
     @GetMapping(&quot;/transfer:search:by-source-and-destination-account&quot;)
     public ResponseEntity&lt;List&lt;MoneyTransferHistory&gt;&gt; searchBySourceAndDestination(
             @RequestParam(value = &quot;sourceAccountNumber&quot;, required = true) long sourceAccountNumber,
             @RequestParam(value = &quot;destinationAccountNumber&quot;, required = true) long destinationAccountNumber) {
-<span class="fc" id="L145">        List&lt;MoneyTransferHistory&gt; result = savingsAccountService.findBySourceAndDestinationAccountNumber(sourceAccountNumber, destinationAccountNumber);</span>
-<span class="fc" id="L146">        return ResponseEntity.ok(result);</span>
+<span class="fc" id="L147">        List&lt;MoneyTransferHistory&gt; result = savingsAccountService.findBySourceAndDestinationAccountNumber(sourceAccountNumber, destinationAccountNumber);</span>
+<span class="fc" id="L148">        return ResponseEntity.ok(result);</span>
     }
     
     @PostMapping(path = &quot;/moneyTransfer:batch&quot;, consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity&lt;List&lt;MoneyTransferResponse&gt;&gt; batchMoneyTransfer(@RequestPart(&quot;file&quot;) MultipartFile file) {
         List&lt;MoneyTransferRequest&gt; requests;
-<span class="fc" id="L152">        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {</span>
+<span class="fc" id="L154">        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {</span>
             // Step 1: Parse the file
-<span class="fc" id="L154">            requests = SavingsAccountUtil.parseBatchMoneyTransferFile(reader);</span>
-<span class="fc" id="L155">        } catch (IllegalArgumentException e) {</span>
-<span class="fc" id="L156">            log.error(&quot;File format error: {}&quot;, e.getMessage());</span>
-<span class="fc" id="L157">            return ResponseEntity.badRequest().body(List.of(new MoneyTransferResponse(null, false, e.getMessage())));</span>
-<span class="fc" id="L158">        } catch (Exception e) {</span>
-<span class="fc" id="L159">            log.error(&quot;Error reading uploaded file: {}&quot;, e.getMessage(), e);</span>
-<span class="fc" id="L160">            return ResponseEntity.internalServerError().body(List.of(new MoneyTransferResponse(null, false, &quot;Internal server error: &quot; + e.getMessage())));</span>
-<span class="fc" id="L161">        }</span>
+<span class="fc" id="L156">            requests = SavingsAccountUtil.parseBatchMoneyTransferFile(reader);</span>
+<span class="fc" id="L157">        } catch (IllegalArgumentException e) {</span>
+<span class="fc" id="L158">            log.error(&quot;File format error: {}&quot;, e.getMessage());</span>
+<span class="fc" id="L159">            return ResponseEntity.badRequest().body(List.of(new MoneyTransferResponse(null, false, e.getMessage())));</span>
+<span class="fc" id="L160">        } catch (Exception e) {</span>
+<span class="fc" id="L161">            log.error(&quot;Error reading uploaded file: {}&quot;, e.getMessage(), e);</span>
+<span class="fc" id="L162">            return ResponseEntity.internalServerError().body(List.of(new MoneyTransferResponse(null, false, &quot;Internal server error: &quot; + e.getMessage())));</span>
+<span class="fc" id="L163">        }</span>
         // Step 2: Process the parsed rows one by one
-<span class="fc" id="L163">        var responses = this.savingsAccountService.processMoneyTransferList(requests);</span>
-<span class="fc" id="L164">        return ResponseEntity.ok(responses);</span>
+<span class="fc" id="L165">        var responses = this.savingsAccountService.processMoneyTransferList(requests);</span>
+<span class="fc" id="L166">        return ResponseEntity.ok(responses);</span>
     }
     
-    @GetMapping(&quot;/mock-transactions:download&quot;)
+    @PostMapping(&quot;/mock-transactions:download&quot;)
     public ResponseEntity&lt;byte[]&gt; generateMockTransactionsFile(
             @RequestParam int countOfSourceAccounts,
             @RequestParam int countOfDestinationAccountsForEachSourceAccount) {
         // Step 1: Generate mock MoneyTransferRequest list
-<span class="fc" id="L172">        List&lt;MoneyTransferRequest&gt; requests = savingsAccountService.generateMockTransactions(</span>
+<span class="fc" id="L174">        List&lt;MoneyTransferRequest&gt; requests = savingsAccountService.generateMockTransactions(</span>
                 countOfSourceAccounts, countOfDestinationAccountsForEachSourceAccount);
         // Step 2: Convert to list of strings
-<span class="fc" id="L175">        List&lt;String&gt; lines = savingsAccountService.generateMockTransactions(requests);</span>
+<span class="fc" id="L177">        List&lt;String&gt; lines = savingsAccountService.generateMockTransactions(requests);</span>
         // Step 3: Join lines and return as downloadable text file
-<span class="fc" id="L177">        String content = String.join(System.lineSeparator(), lines);</span>
-<span class="fc" id="L178">        byte[] fileContent = content.getBytes(java.nio.charset.StandardCharsets.UTF_8);</span>
-<span class="fc" id="L179">        String filename = &quot;mock-transactions.csv&quot;;</span>
-<span class="fc" id="L180">        return ResponseEntity.ok()</span>
-<span class="fc" id="L181">                .header(&quot;Content-Disposition&quot;, &quot;attachment; filename=&quot; + filename)</span>
-<span class="fc" id="L182">                .contentType(MediaType.TEXT_PLAIN)</span>
-<span class="fc" id="L183">                .body(fileContent);</span>
+<span class="fc" id="L179">        String content = String.join(System.lineSeparator(), lines);</span>
+<span class="fc" id="L180">        byte[] fileContent = content.getBytes(java.nio.charset.StandardCharsets.UTF_8);</span>
+<span class="fc" id="L181">        String filename = &quot;mock-transactions.csv&quot;;</span>
+<span class="fc" id="L182">        return ResponseEntity.ok()</span>
+<span class="fc" id="L183">                .header(&quot;Content-Disposition&quot;, &quot;attachment; filename=&quot; + filename)</span>
+<span class="fc" id="L184">                .contentType(MediaType.TEXT_PLAIN)</span>
+<span class="fc" id="L185">                .body(fileContent);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

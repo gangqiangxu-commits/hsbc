@@ -69,13 +69,15 @@ public class SavingsAccountController {
     public ResponseEntity<List<SavingsAccount>> batchOpenAccounts(@RequestParam int numAccounts, @RequestParam int balance) {
 		log.info("Received request to create {} accounts with balance={}", numAccounts, balance);
 		
+		final int max = 1000;
+		
 		if (balance <= 0) {
-			balance = 10000; // default balance
+			balance = max; // default balance
 			log.info("Using default balance={}", balance);
 		}
 		
-		if (numAccounts <= 0 || numAccounts > 1000) {
-			numAccounts = 10000; // default number of accounts
+		if (numAccounts <= 0 || numAccounts > max) {
+			numAccounts = max; // default number of accounts
 			log.info("Using default numAccounts={}", numAccounts);
 		}
 		
@@ -164,7 +166,7 @@ public class SavingsAccountController {
         return ResponseEntity.ok(responses);
     }
     
-    @GetMapping("/mock-transactions:download")
+    @PostMapping("/mock-transactions:download")
     public ResponseEntity<byte[]> generateMockTransactionsFile(
             @RequestParam int countOfSourceAccounts,
             @RequestParam int countOfDestinationAccountsForEachSourceAccount) {
