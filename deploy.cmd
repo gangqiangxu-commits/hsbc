@@ -1,6 +1,15 @@
 @echo off
 REM build and deploy hsbc project
 
+REM Step 0: Generate test coverage report
+call mvn clean test jacoco:report
+if %errorlevel% neq 0 (
+    echo Coverage report generation failed!
+    exit /b %errorlevel%
+)
+if not exist coverage mkdir coverage
+xcopy /E /I /Y target\site\jacoco coverage\
+
 REM Step 1: Build the hsbc jar
 call mvn clean package -DskipTests
 if %errorlevel% neq 0 (

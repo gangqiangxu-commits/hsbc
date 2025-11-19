@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RedisService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hsbc-springboot</a> &gt; <a href="index.source.html" class="el_package">com.hsbc.iwpb.component</a> &gt; <span class="el_source">RedisService.java</span></div><h1>RedisService.java</h1><pre class="source lang-java linenums">package com.hsbc.iwpb.component;
+
+import java.util.concurrent.locks.Lock;
+
+import org.redisson.api.RAtomicLong;
+import org.redisson.api.RedissonClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
+import org.springframework.stereotype.Component;
+
+@Component
+public class RedisService {
+
+<span class="fc" id="L16">    private static final Logger log = LoggerFactory.getLogger(RedisService.class);</span>
+
+    private final RedissonClient redissonClient;
+
+    @Autowired
+<span class="fc" id="L21">    public RedisService(RedissonClient redissonClient, Environment env) {</span>
+        // Log the redis host and port property at bean creation time
+<span class="fc" id="L23">        String redisHost = env.getProperty(&quot;spring.redis.host&quot;, &quot;NOT_SET&quot;);</span>
+<span class="fc" id="L24">        String redisPort = env.getProperty(&quot;spring.redis.port&quot;, &quot;NOT_SET&quot;);</span>
+<span class="fc" id="L25">        log.info(&quot;[DIAG] spring.redis.host property in RedisService: {}&quot;, redisHost);</span>
+<span class="fc" id="L26">        log.info(&quot;[DIAG] spring.redis.port property in RedisService: {}&quot;, redisPort);</span>
+<span class="fc" id="L27">        this.redissonClient = redissonClient;</span>
+<span class="fc" id="L28">    }</span>
+
+    public Lock getLock(long accountNumber) {
+<span class="fc" id="L31">		var lock = redissonClient.getLock(buildLockKey(accountNumber));</span>
+<span class="fc bfc" id="L32" title="All 2 branches covered.">		if (lock.tryLock()) {</span>
+<span class="fc" id="L33">			return lock;</span>
+		}
+<span class="fc" id="L35">		return null;</span>
+	}
+    
+    private static String buildLockKey(long accountNumber) {
+<span class="fc" id="L39">		return &quot;account_lock_&quot; + accountNumber;</span>
+	}
+    
+    /**
+     * Generate the next global transaction id using Redis-backed atomic counter.
+     * Uses key: &quot;transaction:seq&quot;.
+     *
+     * @return next transaction id (monotonic increasing long)
+     */
+    public long nextTransactionId() {
+<span class="fc" id="L49">        RAtomicLong seq = redissonClient.getAtomicLong(&quot;transaction:seq&quot;);</span>
+<span class="fc" id="L50">        long id = seq.incrementAndGet();</span>
+<span class="fc" id="L51">        log.info(&quot;Generated transaction id: {}&quot;, id);</span>
+<span class="fc" id="L52">        return id;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

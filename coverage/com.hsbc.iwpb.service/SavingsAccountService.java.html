@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SavingsAccountService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hsbc-springboot</a> &gt; <a href="index.source.html" class="el_package">com.hsbc.iwpb.service</a> &gt; <span class="el_source">SavingsAccountService.java</span></div><h1>SavingsAccountService.java</h1><pre class="source lang-java linenums">package com.hsbc.iwpb.service;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import com.hsbc.iwpb.component.RedisService;
+import com.hsbc.iwpb.dto.MoneyTransferRequest;
+import com.hsbc.iwpb.dto.MoneyTransferResponse;
+import com.hsbc.iwpb.entity.SavingsAccount;
+import com.hsbc.iwpb.mapper.SavingsAccountMapper;
+import com.hsbc.iwpb.mapper.DepositOrWithdrawHistoryMapper;
+
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
+
+import com.hsbc.iwpb.entity.DepositOrWithdrawHistory;
+import com.hsbc.iwpb.mapper.MoneyTransferHistoryMapper;
+import com.hsbc.iwpb.entity.MoneyTransferHistory;
+
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.locks.Lock;
+import java.util.function.Supplier;
+
+@Service
+public class SavingsAccountService {
+<span class="fc" id="L33">    private static final Logger log = LoggerFactory.getLogger(SavingsAccountService.class);</span>
+
+    private final SavingsAccountMapper savingsAccountMapper;
+    private final RedisService redisService;
+    private final DepositOrWithdrawHistoryMapper userDepositOrWithdrawHistoryMapper;
+    private final MoneyTransferHistoryMapper moneyTransferHistoryMapper;
+    private final TransactionTemplate transactionTemplate;
+
+<span class="fc" id="L41">    private static final RetryConfig lockAccountRetryConfig = RetryConfig.custom()</span>
+<span class="fc" id="L42">            .maxAttempts(10)</span>
+<span class="fc" id="L43">            .waitDuration(Duration.ofMillis(1000))</span>
+<span class="fc" id="L44">            .build();</span>
+    
+<span class="fc" id="L46">    private static final RetryConfig depositOrWithdrawRetryConfig = RetryConfig.custom()</span>
+<span class="fc" id="L47">            .maxAttempts(3)</span>
+<span class="fc" id="L48">            .waitDuration(Duration.ofMillis(100))</span>
+<span class="fc" id="L49">            .build();</span>
+    
+<span class="fc" id="L51">    private static final RetryConfig moneyTransferRetryConfig = RetryConfig.custom()</span>
+<span class="fc" id="L52">            .maxAttempts(3)</span>
+<span class="fc" id="L53">            .waitDuration(Duration.ofMillis(200))</span>
+<span class="fc" id="L54">            .build();</span>
+    
+    @Autowired
+<span class="fc" id="L57">    public SavingsAccountService(SavingsAccountMapper savingsAccountMapper, RedisService redisService, DepositOrWithdrawHistoryMapper userDepositOrWithdrawHistoryMapper, MoneyTransferHistoryMapper ahm, TransactionTemplate transactionTemplate) {</span>
+<span class="fc" id="L58">        this.savingsAccountMapper = savingsAccountMapper;</span>
+<span class="fc" id="L59">        this.redisService = redisService;</span>
+<span class="fc" id="L60">        this.userDepositOrWithdrawHistoryMapper = userDepositOrWithdrawHistoryMapper;</span>
+<span class="fc" id="L61">        this.moneyTransferHistoryMapper = ahm;</span>
+<span class="fc" id="L62">        this.transactionTemplate = transactionTemplate;</span>
+<span class="fc" id="L63">    }</span>
+
+    public SavingsAccount getAccount(long accountNumber) {
+<span class="fc" id="L66">        return savingsAccountMapper.findByAccountNumber(accountNumber);</span>
+    }
+    
+    private SavingsAccount getAccountWithNewBalance(long accountNumber, long amount) {
+<span class="fc" id="L70">    	SavingsAccount account = savingsAccountMapper.findByAccountNumber(accountNumber);</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        if (account == null) {</span>
+<span class="fc" id="L72">            throw new IllegalArgumentException(&quot;Account &quot; + accountNumber + &quot; does not exist&quot;);</span>
+        }
+<span class="fc" id="L74">        long newBalance = account.getBalance() + amount;</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (newBalance &lt; 0) {</span>
+<span class="fc" id="L76">            throw new IllegalArgumentException(&quot;Insufficient funds in account &quot; + accountNumber + &quot; for withdrawal of &quot; + (-amount));</span>
+        }
+        
+<span class="fc" id="L79">        account.setBalance(newBalance);</span>
+<span class="fc" id="L80">        account.setLastUpdated(LocalDateTime.now());</span>
+<span class="fc" id="L81">        return account;</span>
+    }
+    
+    private void conductDepositOrWithdraw(SavingsAccount account, DepositOrWithdrawHistory history) {
+<span class="fc" id="L85">    	this.transactionTemplate.executeWithoutResult(status -&gt; {</span>
+    		try {
+<span class="fc" id="L87">    			savingsAccountMapper.update(account);</span>
+<span class="fc" id="L88">    	        log.info(&quot;Account {} new balance after deposit/withdraw: {}&quot;, account.getAccountNumber(), account.getBalance());</span>
+    	        
+    	        
+<span class="fc" id="L91">    	        log.info(&quot;Recording deposit/withdraw history: accountNumber={}, amount={}&quot;, history.getAccountNumber(), history.getAmount());</span>
+<span class="fc" id="L92">    	        userDepositOrWithdrawHistoryMapper.insert(history);</span>
+<span class="fc" id="L93">    		} catch(Exception e) {</span>
+<span class="fc" id="L94">				log.error(&quot;Error during money transfer processing, marking for rollback: {}&quot;, e.getMessage());</span>
+<span class="fc" id="L95">				status.setRollbackOnly();</span>
+<span class="fc" id="L96">				throw new RuntimeException(&quot;error during money transfer processing&quot;, e);</span>
+<span class="fc" id="L97">    		}</span>
+<span class="fc" id="L98">    	});</span>
+<span class="fc" id="L99">    }</span>
+    
+    public SavingsAccount depositOrWithdraw(long accountNumber, long amount) {
+<span class="fc" id="L102">    	SavingsAccount account = getAccountWithNewBalance(accountNumber, amount);</span>
+        // lock accounts
+<span class="fc" id="L104">        Lock lock = lockAccount(accountNumber);</span>
+        
+        try {
+<span class="fc" id="L107">	        final long transId = this.redisService.nextTransactionId();</span>
+<span class="fc" id="L108">	        DepositOrWithdrawHistory history = new DepositOrWithdrawHistory(accountNumber, amount, account.getLastUpdated(), transId);</span>
+	        
+<span class="fc" id="L110">	        Retry retry = Retry.of(&quot;depositOrWithdrawRetry&quot;, depositOrWithdrawRetryConfig);</span>
+<span class="fc" id="L111">	        Retry.decorateRunnable(retry, () -&gt; conductDepositOrWithdraw(account, history)).run();</span>
+	        
+<span class="fc" id="L113">	        return savingsAccountMapper.findByAccountNumber(accountNumber);</span>
+        } finally {
+<span class="fc" id="L115">			lock.unlock();</span>
+		}
+    }
+
+    public SavingsAccount createAccount(String name, long personalId) {
+<span class="fc" id="L120">        LocalDateTime now = LocalDateTime.now();</span>
+<span class="fc" id="L121">        SavingsAccount account = new SavingsAccount();</span>
+<span class="fc" id="L122">        account.setName(name);</span>
+<span class="fc" id="L123">        account.setPersonalId(personalId);</span>
+<span class="fc" id="L124">        account.setCreatedAt(now);</span>
+<span class="fc" id="L125">        account.setLastUpdated(now);</span>
+<span class="fc" id="L126">        savingsAccountMapper.insert(account);</span>
+<span class="fc" id="L127">        log.info(&quot;Created account {} with name='{}' personalId={} balance=0&quot;, account.getAccountNumber(), name, personalId);</span>
+<span class="fc" id="L128">        return account;</span>
+    }
+
+    public List&lt;SavingsAccount&gt; listAccounts() {
+<span class="fc" id="L132">        return savingsAccountMapper.listAll();</span>
+    }
+
+    public List&lt;DepositOrWithdrawHistory&gt; listDepositOrWithdrawHistory(long accountNumber) {
+<span class="fc" id="L136">        return userDepositOrWithdrawHistoryMapper.findByAccountNumber(accountNumber);</span>
+    }
+    
+    public MoneyTransferHistory findByTransactionId(long transactionId) {
+<span class="fc" id="L140">        return this.moneyTransferHistoryMapper.findByTransactionId(transactionId);</span>
+    }
+
+    public List&lt;MoneyTransferHistory&gt; findBySourceAccountNumber(long accountNumber) {
+<span class="fc" id="L144">        return moneyTransferHistoryMapper.findBySourceAccountNumber(accountNumber);</span>
+    }
+
+    public List&lt;MoneyTransferHistory&gt; findByDestinationAccountNumber(long accountNumber) {
+<span class="fc" id="L148">        return moneyTransferHistoryMapper.findByDestinationAccountNumber(accountNumber);</span>
+    }
+    
+    public List&lt;MoneyTransferHistory&gt; findBySourceAndDestinationAccountNumber(long sourceAccountNumber, long destinationAccountNumber) {
+<span class="fc" id="L152">        return moneyTransferHistoryMapper.findBySourceAndDestinationAccountNumber(sourceAccountNumber, destinationAccountNumber);</span>
+    }
+
+    public List&lt;MoneyTransferHistory&gt; listAllMoneyTransferHistories() {
+<span class="fc" id="L156">        return moneyTransferHistoryMapper.listAll();</span>
+    }
+    
+    private Lock lockAccount(long accountNumber) {
+<span class="fc" id="L160">        final Retry retry = Retry.of(&quot;lockAccountRetry&quot;, lockAccountRetryConfig);</span>
+<span class="fc" id="L161">        Supplier&lt;Lock&gt; lockSupplier = Retry.decorateSupplier(retry, () -&gt; {</span>
+<span class="fc" id="L162">            Lock accountLock = redisService.getLock(accountNumber);</span>
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">            if (accountLock == null) {</span>
+<span class="nc" id="L164">                throw new IllegalStateException(&quot;Could not acquire lock for account: &quot; + accountNumber);</span>
+            }
+<span class="fc" id="L166">            return accountLock;</span>
+        });
+<span class="fc" id="L168">        return lockSupplier.get();</span>
+	}
+    
+    private Lock[] lockAccounts(long sourceAccountNumber, long destinationAccountNumber) {
+    	// avoid deadlock by always locking in the order of smaller account number first
+<span class="fc" id="L173">    	long smallerAccountNumber = Math.min(sourceAccountNumber,  destinationAccountNumber);</span>
+<span class="fc" id="L174">    	long largerAccountNumber = Math.max(sourceAccountNumber,  destinationAccountNumber);</span>
+    	
+<span class="fc" id="L176">        final Retry retry = Retry.of(&quot;lockAccountsRetry&quot;, lockAccountRetryConfig);</span>
+<span class="fc" id="L177">        Supplier&lt;Lock[]&gt; lockSupplier = Retry.decorateSupplier(retry, () -&gt; {</span>
+<span class="fc" id="L178">            Lock smallerAccountLock = redisService.getLock(smallerAccountNumber);</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">            if (smallerAccountLock == null) {</span>
+<span class="fc" id="L180">                throw new IllegalStateException(&quot;Could not acquire lock for account: &quot; + smallerAccountNumber);</span>
+            }
+<span class="fc" id="L182">            Lock largerAccountLock = redisService.getLock(largerAccountNumber);</span>
+<span class="pc bpc" id="L183" title="1 of 2 branches missed.">            if (largerAccountLock == null) {</span>
+<span class="nc" id="L184">            	smallerAccountLock.unlock();</span>
+<span class="nc" id="L185">                throw new IllegalStateException(&quot;Could not acquire lock for account: &quot; + largerAccountNumber);</span>
+            }
+<span class="fc" id="L187">            return new Lock[] {smallerAccountLock, largerAccountLock};</span>
+        });
+<span class="fc" id="L189">        return lockSupplier.get();</span>
+	}
+
+    public List&lt;MoneyTransferResponse&gt; processMoneyTransferList(List&lt;MoneyTransferRequest&gt; req) {
+<span class="fc bfc" id="L193" title="All 4 branches covered.">        if (req == null || req.isEmpty()) {</span>
+<span class="fc" id="L194">            return Collections.emptyList();</span>
+        }
+        
+<span class="fc" id="L197">        req = new ArrayList&lt;&gt;(req); // make a modifiable copy</span>
+<span class="fc" id="L198">        List&lt;MoneyTransferResponse&gt; responses = Collections.synchronizedList(new ArrayList&lt;&gt;());</span>
+<span class="fc" id="L199">        List&lt;Thread&gt; threads = new ArrayList&lt;&gt;();</span>
+        // shuffle the request list to simulate random order processing - avoid same source account contention (lock)
+<span class="fc" id="L201">        Collections.shuffle(req);</span>
+<span class="fc bfc" id="L202" title="All 2 branches covered.">        for (MoneyTransferRequest r : req) {</span>
+<span class="fc" id="L203">            Thread t = Thread.ofVirtual().unstarted(() -&gt; {</span>
+                try {
+<span class="fc" id="L205">                    SavingsAccount result = processMoneyTransfer(r);</span>
+<span class="fc" id="L206">                    responses.add(new MoneyTransferResponse(result, true, &quot;&quot;));</span>
+<span class="fc" id="L207">                } catch (Exception e) {</span>
+<span class="fc" id="L208">                    log.error(&quot;Error processing money transfer request: {}&quot;, r, e);</span>
+<span class="fc" id="L209">                    responses.add(new MoneyTransferResponse(null, false, e.getMessage()));</span>
+<span class="fc" id="L210">                }</span>
+<span class="fc" id="L211">            });</span>
+<span class="fc" id="L212">            threads.add(t);</span>
+<span class="fc" id="L213">            t.start();</span>
+<span class="fc" id="L214">        }</span>
+        
+<span class="fc" id="L216">        log.info(&quot;Started {} threads for processing money transfers&quot;, threads.size());</span>
+<span class="fc bfc" id="L217" title="All 2 branches covered.">        for (Thread t : threads) {</span>
+            try {
+<span class="fc" id="L219">                t.join();</span>
+<span class="nc" id="L220">            } catch (InterruptedException e) {</span>
+<span class="nc" id="L221">                Thread.currentThread().interrupt();</span>
+<span class="nc" id="L222">                log.error(&quot;Thread interrupted while processing money transfers&quot;, e);</span>
+<span class="fc" id="L223">            }</span>
+<span class="fc" id="L224">        }</span>
+<span class="fc" id="L225">        return responses;</span>
+    }
+    
+    private void validateMoneyTransferRequest(MoneyTransferRequest req) {
+<span class="pc bpc" id="L229" title="1 of 2 branches missed.">    	if (req.sourceAccountNumber() == req.destinationAccountNumber()) {</span>
+<span class="nc" id="L230">			throw new IllegalArgumentException(&quot;Source and destination account numbers cannot be the same: &quot; + req.sourceAccountNumber());</span>
+		}
+    	
+<span class="fc" id="L233">    	SavingsAccount account = this.savingsAccountMapper.findByAccountNumber(req.sourceAccountNumber());</span>
+<span class="fc bfc" id="L234" title="All 2 branches covered.">        if (account == null) {</span>
+<span class="fc" id="L235">        	throw new NullPointerException(&quot;Source account not found&quot;);</span>
+        }
+<span class="fc bfc" id="L237" title="All 2 branches covered.">        if (account.getBalance() &lt; req.amount()) {</span>
+<span class="fc" id="L238">            throw new IllegalArgumentException(&quot;Insufficient funds in source account: &quot; + req.sourceAccountNumber());</span>
+        }
+        
+<span class="fc" id="L241">        account = this.savingsAccountMapper.findByAccountNumber(req.destinationAccountNumber());</span>
+<span class="fc bfc" id="L242" title="All 2 branches covered.">        if (account == null) {</span>
+<span class="fc" id="L243">        	throw new NullPointerException(&quot;Destination account not found&quot;);</span>
+        }
+<span class="fc" id="L245">    }</span>
+    
+    private SavingsAccount doProcessMoneyTransfer(MoneyTransferRequest req) {
+<span class="fc" id="L248">    	return  this.transactionTemplate.execute(status -&gt; {</span>
+    		try {
+<span class="fc" id="L250">		    	final long san = req.sourceAccountNumber();</span>
+<span class="fc" id="L251">		        final long dan = req.destinationAccountNumber();</span>
+		        
+		    	// save money transfer history
+<span class="fc" id="L254">		        long tid = redisService.nextTransactionId();</span>
+<span class="fc" id="L255">		        MoneyTransferHistory transfer = new MoneyTransferHistory(tid, san, dan, req.amount(), LocalDateTime.now());</span>
+<span class="fc" id="L256">		        this.moneyTransferHistoryMapper.insert(transfer);</span>
+<span class="fc" id="L257">		        log.info(&quot;Recorded money transfer: {}&quot;, transfer);</span>
+		        
+		        // reduce money in source account
+<span class="fc" id="L260">		        SavingsAccount sourceAccount = this.savingsAccountMapper.findByAccountNumber(san);</span>
+<span class="fc" id="L261">		        sourceAccount.setBalance(sourceAccount.getBalance() - req.amount());</span>
+<span class="fc" id="L262">		        this.savingsAccountMapper.update(sourceAccount);</span>
+<span class="fc" id="L263">		        log.info(&quot;Debited source account {} by amount {}. New balance: {}&quot;, san, req.amount(), sourceAccount.getBalance());</span>
+		        
+		        // increment money in destination account
+<span class="fc" id="L266">		        SavingsAccount destinationAccount = this.savingsAccountMapper.findByAccountNumber(dan);</span>
+<span class="fc" id="L267">		        destinationAccount.setBalance(destinationAccount.getBalance() + req.amount());</span>
+<span class="fc" id="L268">		        this.savingsAccountMapper.update(destinationAccount);</span>
+		        
+<span class="fc" id="L270">		        log.info(&quot;Credited destination account {} by amount {}. New balance: {}&quot;, dan, req.amount(), destinationAccount.getBalance());</span>
+<span class="fc" id="L271">		        return sourceAccount;</span>
+<span class="fc" id="L272">    		} catch(Exception e) {</span>
+<span class="fc" id="L273">				log.error(&quot;Error during money transfer processing, marking for rollback: {}&quot;, e.getMessage());</span>
+<span class="fc" id="L274">				status.setRollbackOnly();</span>
+<span class="fc" id="L275">				throw new RuntimeException(&quot;error during money transfer processing&quot;, e);</span>
+    		}
+    	});
+    }
+    
+    public SavingsAccount processMoneyTransfer(MoneyTransferRequest req) {
+<span class="fc" id="L281">    	validateMoneyTransferRequest(req);</span>
+        
+<span class="fc" id="L283">        Lock[] locks = lockAccounts(req.sourceAccountNumber(), req.destinationAccountNumber());</span>
+        try  {
+<span class="fc" id="L285">            final Retry retry = Retry.of(&quot;processMoneyTransferRetry&quot;, moneyTransferRetryConfig);</span>
+<span class="fc" id="L286">            return Retry.decorateSupplier(retry, () -&gt; doProcessMoneyTransfer(req)).get();</span>
+<span class="fc" id="L287">        } catch (RuntimeException re) {</span>
+<span class="fc" id="L288">        	log.error(&quot;Error processing money transfer: {}, req:{}&quot;, re.getMessage(), req);</span>
+<span class="fc" id="L289">            throw re;</span>
+<span class="nc" id="L290">		} catch (Exception e) {</span>
+<span class="nc" id="L291">            log.error(&quot;Error processing transaction: {}, req:{}&quot;, e.getMessage(), req);</span>
+<span class="nc" id="L292">            throw new RuntimeException(&quot;error process money transfer in transaction&quot;, e);</span>
+        } finally {
+<span class="fc bfc" id="L294" title="All 2 branches covered.">            for (Lock lock : locks) {</span>
+<span class="fc" id="L295">                lock.unlock();</span>
+            }
+        }
+    }
+    
+    /**
+     * Generate mock money transfer requests for testing.
+     * @param countOfSourceAccounts number of source accounts to use (max 100)
+     * @param countOfDestinationAccountsForEachSourceAccount number of destination accounts per source (max 100)
+     * @return list of MoneyTransferRequest
+     */
+    public List&lt;MoneyTransferRequest&gt; generateMockTransactions(int countOfSourceAccounts, int countOfDestinationAccountsForEachSourceAccount) {
+        // Cap the input values
+<span class="fc" id="L308">    	final int MAX = 100;</span>
+<span class="fc bfc" id="L309" title="All 2 branches covered.">        if (countOfSourceAccounts &gt; MAX) {</span>
+<span class="fc" id="L310">        	countOfSourceAccounts = MAX;</span>
+        }
+<span class="pc bpc" id="L312" title="1 of 2 branches missed.">        if (countOfDestinationAccountsForEachSourceAccount &gt; MAX) {</span>
+<span class="nc" id="L313">        	countOfDestinationAccountsForEachSourceAccount = MAX;</span>
+        }
+
+<span class="fc" id="L316">        List&lt;SavingsAccount&gt; allAccounts = listAccounts();</span>
+<span class="fc" id="L317">        int totalAccounts = allAccounts.size();</span>
+<span class="fc bfc" id="L318" title="All 2 branches covered.">        if (totalAccounts &lt; countOfSourceAccounts) {</span>
+<span class="fc" id="L319">            countOfSourceAccounts = totalAccounts;</span>
+        }
+<span class="fc bfc" id="L321" title="All 2 branches covered.">        if (countOfDestinationAccountsForEachSourceAccount &gt;= totalAccounts) {</span>
+<span class="fc" id="L322">			countOfDestinationAccountsForEachSourceAccount = totalAccounts - 1;</span>
+		}
+        
+<span class="fc bfc" id="L325" title="All 4 branches covered.">        if (countOfSourceAccounts == 0 || countOfDestinationAccountsForEachSourceAccount == 0) {</span>
+<span class="fc" id="L326">            return Collections.emptyList();</span>
+        }
+
+<span class="fc" id="L329">        List&lt;SavingsAccount&gt; sourceAccounts = new ArrayList&lt;&gt;(allAccounts);</span>
+<span class="fc" id="L330">        Collections.sort(sourceAccounts, (a, b) -&gt; Long.compare(b.getBalance(), a.getBalance()));</span>
+<span class="fc" id="L331">        sourceAccounts = sourceAccounts.subList(0, countOfSourceAccounts);</span>
+
+<span class="fc" id="L333">        List&lt;MoneyTransferRequest&gt; requests = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L334" title="All 2 branches covered.">        for (SavingsAccount source : sourceAccounts) {</span>
+<span class="fc" id="L335">            long balance = source.getBalance();</span>
+<span class="pc bpc" id="L336" title="1 of 2 branches missed.">            if (balance &lt;= 0) {</span>
+<span class="nc" id="L337">            	continue;</span>
+            }
+<span class="fc" id="L339">            long amount = balance / countOfDestinationAccountsForEachSourceAccount;</span>
+<span class="pc bpc" id="L340" title="1 of 2 branches missed.">            if (amount &lt;= 0) {</span>
+<span class="nc" id="L341">            	continue;</span>
+            }
+            // Prepare destination candidates (exclude self)
+<span class="fc" id="L344">            List&lt;SavingsAccount&gt; destCandidates = new ArrayList&lt;&gt;(allAccounts);</span>
+<span class="fc" id="L345">            destCandidates.remove(source);</span>
+<span class="pc bpc" id="L346" title="1 of 2 branches missed.">            if (destCandidates.isEmpty()) {</span>
+<span class="nc" id="L347">            	continue;</span>
+            }
+<span class="fc" id="L349">            Collections.shuffle(destCandidates);</span>
+            
+<span class="fc" id="L351">            final long san  = source.getAccountNumber();</span>
+<span class="fc bfc" id="L352" title="All 2 branches covered.">            for (int i = 0; i &lt; countOfDestinationAccountsForEachSourceAccount; i++) {</span>
+<span class="fc" id="L353">                requests.add(new MoneyTransferRequest(san, destCandidates.get(i).getAccountNumber(), amount));</span>
+            }
+<span class="fc" id="L355">        }</span>
+<span class="fc" id="L356">        return requests;</span>
+    }
+    
+    /**
+     * Converts a list of MoneyTransferRequest to a list of strings with 3 columns: source account, destination account, amount.
+     * Uses StringBuilder for efficient string concatenation.
+     * @param requests list of MoneyTransferRequest
+     * @return list of string, each string formatted as &quot;sourceAccount destinationAccount amount&quot;
+     */
+    public List&lt;String&gt; generateMockTransactions(List&lt;MoneyTransferRequest&gt; requests) {
+<span class="fc" id="L366">        List&lt;String&gt; result = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L367" title="All 2 branches covered.">        for (MoneyTransferRequest req : requests) {</span>
+<span class="fc" id="L368">            StringBuilder sb = new StringBuilder();</span>
+<span class="fc" id="L369">            sb.append(req.sourceAccountNumber())</span>
+<span class="fc" id="L370">              .append(&quot; &quot;)</span>
+<span class="fc" id="L371">              .append(req.destinationAccountNumber())</span>
+<span class="fc" id="L372">              .append(&quot; &quot;)</span>
+<span class="fc" id="L373">              .append(req.amount());</span>
+<span class="fc" id="L374">            result.add(sb.toString());</span>
+<span class="fc" id="L375">        }</span>
+<span class="fc" id="L376">        return result;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

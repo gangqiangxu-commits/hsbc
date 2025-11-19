@@ -30,6 +30,20 @@ public class MoneyTransferHistory {
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
+    public int hashCode() {
+		return Long.hashCode(transactionId);
+	}
+    
+    public boolean equals(Object obj) {
+		if (this == obj) {
+			return true;
+		}
+		if (obj == null || getClass() != obj.getClass()) {
+			return false;
+		}
+		return this.transactionId == ((MoneyTransferHistory) obj).transactionId;
+    }
+    
     @Override
     public String toString() {
         return "MoneyTransferHistory{" +

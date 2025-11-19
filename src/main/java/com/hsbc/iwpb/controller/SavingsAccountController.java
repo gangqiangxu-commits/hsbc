@@ -160,11 +160,11 @@ public class SavingsAccountController {
             return ResponseEntity.internalServerError().body(List.of(new MoneyTransferResponse(null, false, "Internal server error: " + e.getMessage())));
         }
         // Step 2: Process the parsed rows one by one
-        var responses = this.savingsAccountService.processMoneyTransfer(requests);
+        var responses = this.savingsAccountService.processMoneyTransferList(requests);
         return ResponseEntity.ok(responses);
     }
     
-    @GetMapping("/mock-transactions/download")
+    @GetMapping("/mock-transactions:download")
     public ResponseEntity<byte[]> generateMockTransactionsFile(
             @RequestParam int countOfSourceAccounts,
             @RequestParam int countOfDestinationAccountsForEachSourceAccount) {

@@ -1,6 +1,15 @@
 #!/bin/bash
 # build and deploy hsbc project
 
+# Step 0: Generate test coverage report
+mvn clean test jacoco:report
+if [ $? -ne 0 ]; then
+    echo "Coverage report generation failed!"
+    exit $?
+fi
+mkdir -p coverage
+cp -r target/site/jacoco/* coverage/
+
 # Step 1: Build the hsbc jar
 mvn clean package -DskipTests
 if [ $? -ne 0 ]; then

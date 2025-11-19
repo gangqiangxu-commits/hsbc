@@ -13,19 +13,6 @@ public class SavingsAccount {
     public SavingsAccount() {
     }
 
-    public SavingsAccount(long accountNumber, long balance) {
-        this.accountNumber = accountNumber;
-        this.balance = balance;
-    }
-
-    // kept for existing callers
-    public SavingsAccount(long accountNumber, long balance, LocalDateTime createdAt, LocalDateTime lastUpdated) {
-        this.accountNumber = accountNumber;
-        this.balance = balance;
-        this.createdAt = createdAt;
-        this.lastUpdated = lastUpdated;
-    }
-
     // new full constructor including name and personalId
     public SavingsAccount(long accountNumber, String name, long personalId, long balance, LocalDateTime createdAt, LocalDateTime lastUpdated) {
         this.accountNumber = accountNumber;
@@ -82,6 +69,20 @@ public class SavingsAccount {
 
     public void setLastUpdated(LocalDateTime lastUpdated) {
         this.lastUpdated = lastUpdated;
+    }
+    
+    public int hashCode() {
+		return Long.hashCode(accountNumber);
+	}
+    
+    public boolean equals(Object obj) {
+		if (this == obj) {
+			return true;
+		}
+		if (obj == null || getClass() != obj.getClass()) {
+			return false;
+		}
+		return this.accountNumber == ((SavingsAccount) obj).accountNumber;
     }
 
     @Override

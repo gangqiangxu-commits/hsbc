@@ -129,4 +129,59 @@ public class SavingsAccountControllerIT {
         assertThat(result[0].success()).isFalse();
         assertThat(result[0].errorMessage()).contains("Invalid format");
     }
+
+    @Test
+    void canGetAccountByAccountNumber() {
+        String baseUrl = "http://localhost:" + port;
+        // Create an account
+        OpenAccountRequest req = new OpenAccountRequest("Integration GetAccount", 888888L);
+        ResponseEntity<SavingsAccount> createResp = restTemplate.postForEntity(baseUrl + "/account", req, SavingsAccount.class);
+        assertThat(createResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        SavingsAccount created = createResp.getBody();
+        assertThat(created).isNotNull();
+        // Retrieve the account by accountNumber
+        ResponseEntity<SavingsAccount> getResp = restTemplate.getForEntity(baseUrl + "/account?accountNumber=" + created.getAccountNumber(), SavingsAccount.class);
+        assertThat(getResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        SavingsAccount got = getResp.getBody();
+        assertThat(got).isNotNull();
+        assertThat(got.getAccountNumber()).isEqualTo(created.getAccountNumber());
+        assertThat(got.getName()).isEqualTo("Integration GetAccount");
+        assertThat(got.getPersonalId()).isEqualTo(888888L);
+    }
+
+    @Test
+    void canGenerateMockTransactionsFile() {
+        String baseUrl = "http://localhost:" + port;
+        // Ensure there are at least 4 accounts for the mock transaction generation, each with sufficient balance
+        for (int i = 0; i < 4; i++) {
+            OpenAccountRequest req = new OpenAccountRequest("MockUser" + i, 100000L + i);
+            ResponseEntity<SavingsAccount> resp = restTemplate.postForEntity(baseUrl + "/account", req, SavingsAccount.class);
+            SavingsAccount acc = resp.getBody();
+            assertThat(acc).isNotNull();
+            // Deposit a large amount to ensure sufficient balance
+            DepositWithdrawRequest depReq = new DepositWithdrawRequest(acc.getAccountNumber(), 10000L);
+            ResponseEntity<String> depResp = restTemplate.postForEntity(baseUrl + "/account:depositOrWithdraw", depReq, String.class);
+            assertThat(depResp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
+        // Request a mock transactions file with 2 sources and 2 destinations each
+        String url = baseUrl + "/mock-transactions:download?countOfSourceAccounts=2&countOfDestinationAccountsForEachSourceAccount=2";
+        ResponseEntity<byte[]> response = restTemplate.getForEntity(url, byte[].class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getContentType()).isEqualTo(MediaType.TEXT_PLAIN);
+        assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)).contains("attachment; filename=mock-transactions.csv");
+        byte[] body = response.getBody();
+        assertThat(body).isNotNull();
+        String content = new String(body, java.nio.charset.StandardCharsets.UTF_8);
+        // Should contain at least two lines, each with three columns (source, destination, amount)
+        String[] lines = content.split("\\r?\\n");
+        assertThat(lines.length).isGreaterThanOrEqualTo(2);
+        for (String line : lines) {
+            String[] parts = line.trim().split(" ");
+            assertThat(parts.length).isEqualTo(3);
+            // All parts should be parseable as numbers
+            for (String part : parts) {
+                assertThat(part).matches("\\d+");
+            }
+        }
+    }
 }

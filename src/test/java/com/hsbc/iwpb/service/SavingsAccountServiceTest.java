@@ -17,6 +17,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -65,9 +67,14 @@ public class SavingsAccountServiceTest {
     }
 
     private Lock mockLock() {
-        ReentrantLock lock = new ReentrantLock();
-        lock.lock(); // Ensure the lock is held by the current thread so unlock() is valid
-        return lock;
+        return new Lock() {
+            @Override public void lock() {}
+            @Override public void lockInterruptibly() throws InterruptedException {}
+            @Override public boolean tryLock() { return true; }
+            @Override public boolean tryLock(long time, java.util.concurrent.TimeUnit unit) throws InterruptedException { return true; }
+            @Override public void unlock() {}
+            @Override public java.util.concurrent.locks.Condition newCondition() { throw new UnsupportedOperationException(); }
+        };
     }
 
     @Test
@@ -440,5 +447,102 @@ public class SavingsAccountServiceTest {
             savingsAccountService.processMoneyTransfer(req));
         assertNotNull(ex.getMessage(), "Exception message should not be null");
         assertTrue(ex.getMessage().contains("error during money transfer processing"), "Actual exception message: " + ex.getMessage());
+    }
+
+    @Test
+    void processMoneyTransferList_allSuccess() {
+        // Arrange
+        MoneyTransferRequest req1 = new MoneyTransferRequest(1L, 2L, 100L);
+        MoneyTransferRequest req2 = new MoneyTransferRequest(3L, 4L, 200L);
+        List<MoneyTransferRequest> requests = List.of(req1, req2);
+        // Use a shared map to simulate account state
+        Map<Long, SavingsAccount> accountMap = new ConcurrentHashMap<>();
+        accountMap.put(1L, new SavingsAccount(1L, "A", 111L, 900L, LocalDateTime.now(), LocalDateTime.now()));
+        accountMap.put(2L, new SavingsAccount(2L, "X", 222L, 1000L, LocalDateTime.now(), LocalDateTime.now()));
+        accountMap.put(3L, new SavingsAccount(3L, "B", 333L, 800L, LocalDateTime.now(), LocalDateTime.now()));
+        accountMap.put(4L, new SavingsAccount(4L, "Y", 444L, 1000L, LocalDateTime.now(), LocalDateTime.now()));
+        // Mock locking
+        Map<Long, Lock> lockMap = new ConcurrentHashMap<>();
+        when(redisService.getLock(anyLong())).thenAnswer(invocation -> {
+            Long accNum = invocation.getArgument(0);
+            Lock lock = lockMap.computeIfAbsent(accNum, k -> new ReentrantLock());
+            lock.lock(); // Ensure lock is acquired
+            return lock;
+        });
+        // Mock account lookups and updates to use the shared map
+        when(savingsAccountMapper.findByAccountNumber(anyLong())).thenAnswer(invocation -> {
+            Long accNum = invocation.getArgument(0);
+            return accountMap.get(accNum);
+        });
+        when(savingsAccountMapper.update(any(SavingsAccount.class))).thenAnswer(invocation -> {
+            SavingsAccount acc = invocation.getArgument(0);
+            accountMap.put(acc.getAccountNumber(), acc);
+            return 1;
+        });
+        // Mock transaction id and insert
+        when(redisService.nextTransactionId()).thenReturn(100L, 101L);
+        when(moneyTransferHistoryMapper.insert(any(MoneyTransferHistory.class))).thenReturn(1);
+        when(transactionTemplate.execute(any())).then(invocation -> {
+            Object callback = invocation.getArgument(0);
+            return ((org.springframework.transaction.support.TransactionCallback<?>) callback).doInTransaction(null);
+        });
+        // Act
+        List<com.hsbc.iwpb.dto.MoneyTransferResponse> responses = savingsAccountService.processMoneyTransferList(requests);
+        // Assert
+        assertEquals(2, responses.size());
+        assertTrue(responses.stream().allMatch(r -> r.success()));
+        assertTrue(responses.stream().anyMatch(r -> r.sourceAccount() != null && r.sourceAccount().getAccountNumber() == 1L));
+        assertTrue(responses.stream().anyMatch(r -> r.sourceAccount() != null && r.sourceAccount().getAccountNumber() == 3L));
+    }
+
+    @Test
+    void processMoneyTransferList_someFailures() {
+        // Arrange
+        MoneyTransferRequest req1 = new MoneyTransferRequest(1L, 2L, 100L); // success
+        MoneyTransferRequest req2 = new MoneyTransferRequest(3L, 4L, 200L); // insufficient funds
+        MoneyTransferRequest req3 = new MoneyTransferRequest(5L, 6L, 300L); // destination not found
+        List<MoneyTransferRequest> requests = List.of(req1, req2, req3);
+        SavingsAccount sa1 = new SavingsAccount(1L, "A", 1L, 900L, LocalDateTime.now(), LocalDateTime.now());
+        // Use a mock for sa2 to allow stubbing getBalance()
+        SavingsAccount sa2 = mock(SavingsAccount.class);
+        when(sa2.getAccountNumber()).thenReturn(3L);
+        when(sa2.getBalance()).thenReturn(100L); // less than amount 200L
+        // Mock locking
+        Map<Long, Lock> lockMap = new ConcurrentHashMap<>();
+        when(redisService.getLock(anyLong())).thenAnswer(invocation -> {
+            Long accNum = invocation.getArgument(0);
+            Lock lock = lockMap.computeIfAbsent(accNum, k -> new ReentrantLock());
+            lock.lock(); // Ensure lock is acquired
+            return lock;
+        });
+        // Mock account lookups and balances
+        when(savingsAccountMapper.findByAccountNumber(1L)).thenAnswer(invocation -> new SavingsAccount(1L, "A", 1L, 900L, LocalDateTime.now(), LocalDateTime.now()));
+        when(savingsAccountMapper.findByAccountNumber(2L)).thenAnswer(invocation -> new SavingsAccount(2L, "X", 1L, 1000L, LocalDateTime.now(), LocalDateTime.now()));
+        when(savingsAccountMapper.findByAccountNumber(3L)).thenAnswer(invocation -> sa2);
+        when(savingsAccountMapper.findByAccountNumber(4L)).thenAnswer(invocation -> new SavingsAccount(4L, "Y", 2L, 1000L, LocalDateTime.now(), LocalDateTime.now()));
+        when(savingsAccountMapper.findByAccountNumber(5L)).thenReturn(new SavingsAccount(5L, "C", 3L, 1000L, LocalDateTime.now(), LocalDateTime.now()));
+        when(savingsAccountMapper.findByAccountNumber(6L)).thenReturn(null); // destination not found
+        // Mock transaction id and update
+        when(redisService.nextTransactionId()).thenReturn(100L, 101L);
+        when(moneyTransferHistoryMapper.insert(any(MoneyTransferHistory.class))).thenReturn(1);
+        when(savingsAccountMapper.update(any(SavingsAccount.class))).thenReturn(1);
+        when(transactionTemplate.execute(any())).then(invocation -> {
+            Object callback = invocation.getArgument(0);
+            return ((org.springframework.transaction.support.TransactionCallback<?>) callback).doInTransaction(null);
+        });
+        // Act
+        List<com.hsbc.iwpb.dto.MoneyTransferResponse> responses = savingsAccountService.processMoneyTransferList(requests);
+        // Assert
+        assertEquals(3, responses.size());
+        assertTrue(responses.stream().anyMatch(r -> r.success() && r.sourceAccount().getAccountNumber() == sa1.getAccountNumber()));
+        assertTrue(responses.stream().anyMatch(r -> !r.success() && r.errorMessage().toLowerCase().contains("insufficient")));
+        assertTrue(responses.stream().anyMatch(r -> !r.success() && r.errorMessage().toLowerCase().contains("destination account not found")));
+    }
+
+    @Test
+    void processMoneyTransferList_emptyOrNullInput() {
+        // Act & Assert
+        assertTrue(savingsAccountService.processMoneyTransferList(null).isEmpty());
+        assertTrue(savingsAccountService.processMoneyTransferList(List.of()).isEmpty());
     }
 }

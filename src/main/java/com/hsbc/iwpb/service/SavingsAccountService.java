@@ -189,10 +189,12 @@ public class SavingsAccountService {
         return lockSupplier.get();
 	}
 
-    public List<MoneyTransferResponse> processMoneyTransfer(List<MoneyTransferRequest> req) {
+    public List<MoneyTransferResponse> processMoneyTransferList(List<MoneyTransferRequest> req) {
         if (req == null || req.isEmpty()) {
             return Collections.emptyList();
         }
+        
+        req = new ArrayList<>(req); // make a modifiable copy
         List<MoneyTransferResponse> responses = Collections.synchronizedList(new ArrayList<>());
         List<Thread> threads = new ArrayList<>();
         // shuffle the request list to simulate random order processing - avoid same source account contention (lock)
@@ -224,6 +226,10 @@ public class SavingsAccountService {
     }
     
     private void validateMoneyTransferRequest(MoneyTransferRequest req) {
+    	if (req.sourceAccountNumber() == req.destinationAccountNumber()) {
+			throw new IllegalArgumentException("Source and destination account numbers cannot be the same: " + req.sourceAccountNumber());
+		}
+    	
     	SavingsAccount account = this.savingsAccountMapper.findByAccountNumber(req.sourceAccountNumber());
         if (account == null) {
         	throw new NullPointerException("Source account not found");

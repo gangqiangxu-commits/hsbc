@@ -188,7 +188,7 @@ public class SavingsAccountControllerTest {
         );
         try (var mocked = org.mockito.Mockito.mockStatic(SavingsAccountUtil.class)) {
             mocked.when(() -> SavingsAccountUtil.parseBatchMoneyTransferFile(any())).thenReturn(parsedRequests);
-            when(savingsAccountService.processMoneyTransfer(parsedRequests)).thenReturn(responses);
+            when(savingsAccountService.processMoneyTransferList(parsedRequests)).thenReturn(responses);
             ResponseEntity<List<MoneyTransferResponse>> result = controller.batchMoneyTransfer(file);
             assertEquals(200, result.getStatusCode().value());
             assertNotNull(result.getBody());
@@ -226,5 +226,38 @@ public class SavingsAccountControllerTest {
             assertFalse(result.getBody().get(0).success());
             assertTrue(result.getBody().get(0).errorMessage().contains("Internal server error"));
         }
+    }
+
+    @Test
+    void testGetAccount() {
+        SavingsAccount sa = new SavingsAccount(10L, "TestUser", 12345L, 5000L, LocalDateTime.now(), LocalDateTime.now());
+        when(savingsAccountService.getAccount(10L)).thenReturn(sa);
+        ResponseEntity<SavingsAccount> response = controller.getAccount(10L);
+        assertNotNull(response.getBody());
+        assertEquals(sa, response.getBody());
+        assertEquals(200, response.getStatusCode().value());
+    }
+
+    @Test
+    void testGenerateMockTransactionsFile() {
+        // Arrange
+        List<MoneyTransferRequest> mockRequests = List.of(
+            new MoneyTransferRequest(1L, 2L, 100L),
+            new MoneyTransferRequest(3L, 4L, 200L)
+        );
+        List<String> mockLines = List.of("1 2 100", "3 4 200");
+        when(savingsAccountService.generateMockTransactions(2, 2)).thenReturn(mockRequests);
+        when(savingsAccountService.generateMockTransactions(mockRequests)).thenReturn(mockLines);
+
+        // Act
+        ResponseEntity<byte[]> response = controller.generateMockTransactionsFile(2, 2);
+
+        // Assert
+        assertEquals(200, response.getStatusCode().value());
+        assertEquals("attachment; filename=mock-transactions.csv", response.getHeaders().getFirst("Content-Disposition"));
+        assertEquals(org.springframework.http.MediaType.TEXT_PLAIN, response.getHeaders().getContentType());
+        String content = new String(response.getBody(), java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(content.contains("1 2 100"));
+        assertTrue(content.contains("3 4 200"));
     }
 }

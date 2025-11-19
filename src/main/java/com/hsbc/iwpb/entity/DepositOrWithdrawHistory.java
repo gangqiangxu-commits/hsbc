@@ -48,6 +48,20 @@ public class DepositOrWithdrawHistory {
     public void setTransactionId(long transactionId) {
         this.transactionId = transactionId;
     }
+    
+    public int hashCode() {
+		return Long.hashCode(transactionId);
+	}
+    
+    public boolean equals(Object obj) {
+		if (this == obj) {
+			return true;
+		}
+		if (obj == null || getClass() != obj.getClass()) {
+			return false;
+		}
+		return this.transactionId == ((DepositOrWithdrawHistory) obj).transactionId;
+    }
 
     @Override
     public String toString() {

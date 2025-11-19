@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="zh"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SavingsAccount.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hsbc-springboot</a> &gt; <a href="index.source.html" class="el_package">com.hsbc.iwpb.entity</a> &gt; <span class="el_source">SavingsAccount.java</span></div><h1>SavingsAccount.java</h1><pre class="source lang-java linenums">package com.hsbc.iwpb.entity;
+
+import java.time.LocalDateTime;
+
+public class SavingsAccount {
+    private long accountNumber;
+    private String name;
+    private long personalId;
+    private long balance; // unit: cents
+    private LocalDateTime createdAt;
+    private LocalDateTime lastUpdated;
+
+<span class="fc" id="L13">    public SavingsAccount() {</span>
+<span class="fc" id="L14">    }</span>
+
+    // new full constructor including name and personalId
+<span class="fc" id="L17">    public SavingsAccount(long accountNumber, String name, long personalId, long balance, LocalDateTime createdAt, LocalDateTime lastUpdated) {</span>
+<span class="fc" id="L18">        this.accountNumber = accountNumber;</span>
+<span class="fc" id="L19">        this.name = name;</span>
+<span class="fc" id="L20">        this.personalId = personalId;</span>
+<span class="fc" id="L21">        this.balance = balance;</span>
+<span class="fc" id="L22">        this.createdAt = createdAt;</span>
+<span class="fc" id="L23">        this.lastUpdated = lastUpdated;</span>
+<span class="fc" id="L24">    }</span>
+
+    public long getAccountNumber() {
+<span class="fc" id="L27">        return accountNumber;</span>
+    }
+
+    public void setAccountNumber(long accountNumber) {
+<span class="fc" id="L31">        this.accountNumber = accountNumber;</span>
+<span class="fc" id="L32">    }</span>
+
+    public String getName() {
+<span class="fc" id="L35">        return name;</span>
+    }
+
+    public void setName(String name) {
+<span class="fc" id="L39">        this.name = name;</span>
+<span class="fc" id="L40">    }</span>
+
+    public long getPersonalId() {
+<span class="fc" id="L43">        return personalId;</span>
+    }
+
+    public void setPersonalId(long personalId) {
+<span class="fc" id="L47">        this.personalId = personalId;</span>
+<span class="fc" id="L48">    }</span>
+
+    public long getBalance() {
+<span class="fc" id="L51">        return balance;</span>
+    }
+
+    public void setBalance(long balance) {
+<span class="fc" id="L55">        this.balance = balance;</span>
+<span class="fc" id="L56">    }</span>
+
+    public LocalDateTime getCreatedAt() {
+<span class="fc" id="L59">        return createdAt;</span>
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+<span class="fc" id="L63">        this.createdAt = createdAt;</span>
+<span class="fc" id="L64">    }</span>
+
+    public LocalDateTime getLastUpdated() {
+<span class="fc" id="L67">        return lastUpdated;</span>
+    }
+
+    public void setLastUpdated(LocalDateTime lastUpdated) {
+<span class="fc" id="L71">        this.lastUpdated = lastUpdated;</span>
+<span class="fc" id="L72">    }</span>
+    
+    public int hashCode() {
+<span class="fc" id="L75">		return Long.hashCode(accountNumber);</span>
+	}
+    
+    public boolean equals(Object obj) {
+<span class="fc bfc" id="L79" title="All 2 branches covered.">		if (this == obj) {</span>
+<span class="fc" id="L80">			return true;</span>
+		}
+<span class="pc bpc" id="L82" title="1 of 4 branches missed.">		if (obj == null || getClass() != obj.getClass()) {</span>
+<span class="fc" id="L83">			return false;</span>
+		}
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">		return this.accountNumber == ((SavingsAccount) obj).accountNumber;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L90">        return &quot;SavingsAccount{&quot; +</span>
+                &quot;accountNumber=&quot; + accountNumber +
+                &quot;, name='&quot; + name + '\'' +
+                &quot;, personalId=&quot; + personalId +
+                &quot;, balance=&quot; + balance +
+                &quot;, createdAt=&quot; + createdAt +
+                &quot;, lastUpdated=&quot; + lastUpdated +
+                '}';
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.11.202310140853</span></div></body></html>

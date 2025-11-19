@@ -1,0 +1,17 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+hsbc-springboot,com.hsbc.iwpb.entity,SavingsAccount,1,110,2,6,0,35,2,19,0,17
+hsbc-springboot,com.hsbc.iwpb.entity,MoneyTransferHistory,1,97,2,6,0,25,2,17,0,15
+hsbc-springboot,com.hsbc.iwpb.entity,DepositOrWithdrawHistory,1,85,2,6,0,26,2,15,0,13
+hsbc-springboot,com.hsbc.iwpb.config,OpenApiConfig,17,0,0,0,6,0,2,0,2,0
+hsbc-springboot,com.hsbc.iwpb.config,RedissonConfig,15,0,0,0,4,0,2,0,2,0
+hsbc-springboot,com.hsbc.iwpb.controller,SavingsAccountController,3,346,4,4,0,64,3,18,0,17
+hsbc-springboot,com.hsbc.iwpb.util,SavingsAccountUtil,10,86,0,8,2,18,0,7,0,3
+hsbc-springboot,com.hsbc.iwpb.service,SavingsAccountService,46,840,7,45,14,187,7,49,0,30
+hsbc-springboot,com.hsbc.iwpb,SavingsAccountApplication,8,0,0,0,3,0,2,0,2,0
+hsbc-springboot,com.hsbc.iwpb.component,CustomTransanctionService,0,19,0,0,0,6,0,2,0,2
+hsbc-springboot,com.hsbc.iwpb.component,RedisService,0,59,0,2,0,17,0,6,0,5
+hsbc-springboot,com.hsbc.iwpb.dto,MoneyTransferRequest,0,12,0,0,0,1,0,1,0,1
+hsbc-springboot,com.hsbc.iwpb.dto,DepositWithdrawRequest,0,9,0,0,0,1,0,1,0,1
+hsbc-springboot,com.hsbc.iwpb.dto,DepositWithdrawResponse,0,12,0,0,0,1,0,1,0,1
+hsbc-springboot,com.hsbc.iwpb.dto,OpenAccountRequest,0,9,0,0,0,1,0,1,0,1
+hsbc-springboot,com.hsbc.iwpb.dto,MoneyTransferResponse,0,12,0,0,0,1,0,1,0,1
