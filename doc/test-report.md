@@ -31,7 +31,7 @@ For more details, please open coverage/index.html using a web browser.
 **Line coverage: 90%+**  
 **Branch coverage: 80%+**
 
-| Element | Missed Instructions | Cov. | Missed Branches                                        Cov. |  |
+| Element | Missed Instructions | Cov. | Missed Branches                                        |  Cov. |
 | :---- | ----- | ----: | ----- | ----: |
 | Total | 102 of 1,800 | 94% | 17 of 94 | 81% |
 | com.hsbc.iwpb.service |  | 94% |  | 86% |
