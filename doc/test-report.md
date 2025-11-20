@@ -46,6 +46,8 @@ For more details, please open coverage/index.html using a web browser.
 
 ### **2.3 Sample Test Code**
 
+Below is a sample unit test.
+
 @Test  
    **void** depositOrWithdraw\_insufficientFunds\_throws() {  
        SavingsAccount account \= mockAccountWithBalance(***SMALL\_BALANCE***);  
